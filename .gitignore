@@ -3,3 +3,4 @@
 *.venv
 *.vscode
 *logs
+ekg.json
