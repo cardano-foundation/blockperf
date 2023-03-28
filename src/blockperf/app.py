@@ -1,5 +1,8 @@
 from dataclasses import dataclass
 import sys
+import traceback
+import os
+import fcntl
 from pathlib import Path
 import time
 import urllib
@@ -12,55 +15,25 @@ from pprint import pprint
 import random
 import logging
 from configparser import ConfigParser
+from blockperf.blocklog import Blocklog, blocklogs
 
-BLOCKLOGSDIR="/home/msch/src/cf/blockperf.py/blocklogs"
 
 logging.basicConfig(
     level=logging.DEBUG,
     format='(%(threadName)-9s) %(message)s'
 )
 
-"""
-line_tsv=$(jq -r '[
-   .cardano.node.metrics.blockNum.int.val //0,
-   .cardano.node.metrics.forks.int.val //0,
-   .cardano.node.metrics.slotNum.int.val //0
-   ] | @tsv' <<< "$(curl -s -H 'Accept: application/json' http://${EKG_HOST}:${EKG_PORT}/)")
-"""
-
-@dataclass
-class Blocklog:
-    value: int
-    lines: list
-
-    def __init__(self, lines: list) -> None:
-        self.lines = lines
-
-    def __repr__(self) -> str:
-        return f"Blocklog {len(self.lines)} lines"
-
-@dataclass
-class EKGResponse:
-    slot_num: int = 0
-    block_num: int = 0
-    forks: int = 0
-
-    def __init__(self, ekg: dict):
-        _metrics = ekg.get("cardano").get("node").get("metrics")
-        #pprint(_metrics)
-        self.slot_num = _metrics.get("slotNum").get("int").get("val")
-        self.block_num = _metrics.get("blockNum").get("int").get("val")
-        # self.forks = _metrics.get("forks").get("int").get("val")
-
-    def is_valid(self) -> bool:
-        if self.slot_num > 0 and self.block_num > 0: # and self.forks > 0:
-            return True
-        return False
+# Lockfile filepointer to determine if instance is already running
+lockfile_fp = None
 
 class BlocklogProducer(threading.Thread):
     q: queue.Queue
     ekg_url: str
     log_dir: str
+    last_block_num: int = 0
+    last_fork_height: int = 0
+    last_slot_num: int = 0
+    count: int = 0
 
     def __init__(self, queue, config: ConfigParser):
         super(BlocklogProducer,self).__init__(daemon=True, name="producer")
@@ -68,109 +41,69 @@ class BlocklogProducer(threading.Thread):
         self.ekg_url = config.get("DEFAULT", "ekg_url", fallback="http://127.0.0.1:12788")
         self.log_dir = config.get("DEFAULT", "node_logs_dir", fallback="/opt/cardano/cnode/logs")
 
+    def _run(self):
+        # Call ekg to get current slot_num, block_num and fork_num
+        slot_num, block_num = self._call_ekg()
+        self.count += 1
+        print(f"Run: {self.count} - last_block_num: {self.last_block_num}")
+        # If its the first round, just set the last_ values and continue
+        if self.count == 1:
+            self.last_slot_num = slot_num
+            self.last_block_num = block_num
+            #last_fork_height = fork_height
+            return
+
+        # blocks and forks should hold the numbers of the blocks/forks that
+        # have been reported by ekg.
+        blocks, forks = [], []
+        _db = block_num - self.last_block_num
+        # print(f"_db {_db}")
+        if _db and not _db > 5:
+            for i in range(1, _db + 1):
+                #print(f"Range {i}")
+                blocks.append(self.last_block_num + i)
+        self.last_block_num = block_num
+        # Now, For each id in blocks we want to create a
+        # Blocklog which is a list of all the relevant entries of the logfile
+        # That Blocklog is then pushed into the Queue, for the consumer to process
+        for blocklog in blocklogs(blocks, self.log_dir):
+            print(f"Putting in Queue.")
+            print(blocklog)
+            self.q.put(blocklog)
+        # Same thing for forks ...
+        self.last_slot_num = slot_num
+        time.sleep(1)
+
     def run(self):
-        last_block_num = 0
-        last_fork_height = 0
-        last_slot_num = 0
-        count = 0
         while True:
-            # block_num, fork_height, slot_num = self._call_ekg()
-            _ekg = self._call_ekg()
-            count += 1
+            try:
+                self._run()
+            except Exception as e:
+                print(f"Error: {e}")
+                print(traceback.format_exc())
+                time.sleep(1)
 
-            # If its the first round, just set the last_ values and continue
-            if count == 1:
-                last_slot_num = _ekg.slot_num
-                last_block_num = _ekg.block_num
-                #last_fork_height = _ekg.fork_height
-                continue
-
-            # blocks and forks should hold the numbers of the blocks/forks that
-            # have been reported by ekg.
-            blocks, forks = [], []
-            _db = _ekg.block_num - last_block_num
-            # print(f"_db {_db}")
-            if _db and not _db > 5:
-                for i in range(1, _db + 1):
-                    #print(f"Range {i}")
-                    blocks.append(last_block_num + i)
-
-            last_block_num = _ekg.block_num
-
-            # Same thing for forks ...
-
-            # Now, For each id in blocks (and forks), we want to create a
-            # Blocklog which is a list of all the relevant entries of the logfile
-            # That Blocklog is then pushed into the Queue, for the consumer to process
-            for _blocklog in self._blocklogs(blocks):
-                print(f"Putting {_blocklog} in Queue.")
-                self.q.put(_blocklog)
-
-            time.sleep(1)
-
-    def _blocklogs(self, blocks: list):
-        # Read all logfiles into a list of all lines
-        loglines = self._read_logfiles()
-        def _find_hash_by_num(block_num: str):
-            for line in reversed(loglines):
-                if block_num in line:
-                    # Parse the line into a dict and return the hash
-                    line = dict(json.loads(line))
-                    hash = line.get("data").get("block")
-                    print(f"Found {hash}")
-                    return hash
-
-        def _find_lines_by_hash(hash):
-            lines = []
-            for line in loglines:
-                if hash in line:
-                    lines.append(line)
-            # Debug output in file
-            filepath = Path(BLOCKLOGSDIR).joinpath(f"{hash[0:6]}.blocklog")
-            filepath.parent.mkdir(parents=True, exist_ok=True)
-            with filepath.open("w", encoding="utf-8") as f:
-                f.writelines(lines)
-            return lines
-
-        for block in blocks:
-            print(f"Find blocklogs for {block}")
-            hash = _find_hash_by_num(str(block))
-            lines = _find_lines_by_hash(hash)
-            yield Blocklog(lines)
-
-    def _read_logfiles(self) -> list:
-        # import pudb; pu.db
-        from timeit import default_timer as timer
-        start = timer()
-        logfiles = list(Path(self.log_dir).glob("node-*"))
-        logfiles.sort()
-        # pprint(logfiles)
-        log_lines = []
-        for logfile in logfiles[-3:]:
-            with logfile.open() as f:
-                log_lines.extend(f.readlines())
-        end = timer()
-        res = end - start # time it took to run
-        return log_lines
-
-    def _call_ekg(self) -> EKGResponse:
+    def _call_ekg(self) -> tuple:
         """Calls the EKG Port for as long as needed and returns a response if
         there is one. It is not inspecting the block data itself, meaning it will
         just return a tuple of the block_num, the forks and slit_num."""
         while True:
             try:
-                # sys.stdout.write(f"Requesting ekg on {self.ekg_url} \n")
                 req = Request(
                     url=self.ekg_url,
                     headers={"Accept": "application/json"},
                 )
                 response = urlopen(req)
                 if response.status == 200:
+                    ekg_data = json.loads(response.read())
                     # pprint(json.loads(response.read()))
-                    ekg_response = EKGResponse(json.loads(response.read()))
-                    if ekg_response.is_valid():
-                        #pprint(ekg_response)
-                        return ekg_response
+                    metrics = ekg_data.get("cardano").get("node").get("metrics")
+                    slot_num = metrics.get("slotNum").get("int").get("val")
+                    block_num = metrics.get("blockNum").get("int").get("val")
+                    # forks = _metrics.get("forks").get("int").get("val")
+                    # forks may or may not be in ekg.json
+                    if slot_num > 0 and block_num > 0: # and forks > 0:
+                        return (slot_num, block_num) #, forks)
                     else:
                         print(f"Invalid EKG Response returned {response}")
                 else:
@@ -183,6 +116,12 @@ class BlocklogProducer(threading.Thread):
                 time.sleep(1)
 
 class BlocklogConsumer(threading.Thread):
+    """Consumes every Blocklog that is put into the queue.
+
+    Consuming means, taking its message and sending it through MQTT.
+
+
+    """
     q: queue.Queue
     def __init__(self, queue):
         super(BlocklogConsumer,self).__init__(daemon=True)
@@ -192,14 +131,16 @@ class BlocklogConsumer(threading.Thread):
 
     def run(self):
         while True:
-            print("consumer run")
-            obj = self.q.get()
-            print(f"Fetchin {obj} : {self.q.qsize()} items left ")
-            # time.sleep(2)
+            # The call to get() blocks until there is something in the queue
+            blocklog: Blocklog = self.q.get()
+            print(f"Fetchin {blocklog} : {self.q.qsize()} items left ")
+            # to be coded
+            # If finished working, the queue needs to be told about that
             self.q.task_done()
 
+
 class App:
-    _q: queue.Queue
+    q: queue.Queue
     config: ConfigParser
 
     def __init__(self, config:str) -> None:
@@ -207,7 +148,32 @@ class App:
         self.config.read(config)
         self.q = queue.Queue(maxsize=10)
 
+    def _already_running(self) -> bool:
+        """Checks if an instance is already running.
+
+        Will not work on windows since fcntl is unavailable there!!
+
+        """
+        lock_file_fp = open("/tmp/blockperf.lock", 'a')
+        try:
+            fcntl.lockf(lock_file_fp, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            lock_file_fp.seek(0)
+            lock_file_fp.truncate()
+            lock_file_fp.write(str(os.getpid()))
+            lock_file_fp.flush()
+            # Could acquire lock, instance is not running
+            return False
+        except (IOError, BlockingIOError):
+            with open("/tmp/blockperf.lock", 'r') as fp:
+                pid = fp.read()
+                print(f"Already running as pid: {pid}")
+            # Could not acquire lock, implement --force flag or something?
+            return True
+
     def run(self):
+        if self._already_running():
+            sys.exit("Instance already running")
+
         producer = BlocklogProducer(queue=self.q, config=self.config)
         producer.start()
         consumer= BlocklogConsumer(queue=self.q)
