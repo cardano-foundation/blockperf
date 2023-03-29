@@ -15,8 +15,8 @@ from pprint import pprint
 import random
 import logging
 from configparser import ConfigParser
-from blockperf.blocklog import Blocklog, blocklogs
-
+from blockperf.blocklog import Blocklog
+from dataclasses import dataclass, field, InitVar
 
 logging.basicConfig(
     level=logging.DEBUG,
@@ -25,6 +25,29 @@ logging.basicConfig(
 
 # Lockfile filepointer to determine if instance is already running
 lockfile_fp = None
+
+
+
+@dataclass
+class EkgResponse:
+    """Holds all the relevant datafrom the ekg response json for later use."""
+    response: InitVar[dict]
+    block_num: int = field(init=False, default=0)
+    slot_num: int = field(init=False, default=0)
+    forks: int = field(init=False, default=0)
+
+    def __post_init__(self, response: dict) -> None:
+        # Assuming cardano.node.metrics will always be there
+        metrics = response.get("cardano").get("node").get("metrics")
+        self.slot_num = metrics.get("slotNum").get("int").get("val")
+        self.block_num = metrics.get("blockNum").get("int").get("val")
+        self.forks = metrics.get("forks").get("int").get("val")
+
+    def is_valid(self) -> bool:
+        if self.slot_num > 0 and self.block_num > 0:
+            return True
+        return False
+
 
 class BlocklogProducer(threading.Thread):
     q: queue.Queue
@@ -41,40 +64,64 @@ class BlocklogProducer(threading.Thread):
         self.ekg_url = config.get("DEFAULT", "ekg_url", fallback="http://127.0.0.1:12788")
         self.log_dir = config.get("DEFAULT", "node_logs_dir", fallback="/opt/cardano/cnode/logs")
 
-    def _run(self):
+    def calculate_block_nums_from_ekg(self, current_block_num) -> list:
+        """
+        blocks will hold the block_nums from last_block_num + 1 until the
+        currently reported one. So if last_block_num = 14 and ekg_response.block_num
+        is 16, then blocks will be [15, 16]
+        """
+        # If there is no change, or the change is too big (node probably syncing)
+        # return an empty list
+        _delta_block_num = current_block_num -self.last_block_num
+        if not _delta_block_num or _delta_block_num >= 5:
+            print(f"No delta or node is syncing {_delta_block_num}")
+            return []
+
+        block_nums = []
+        for num in range(1, _delta_block_num + 1):
+            block_nums.append(self.last_block_num + num)
+        return block_nums
+
+    def _run(self) -> None:
         # Call ekg to get current slot_num, block_num and fork_num
-        slot_num, block_num = self._call_ekg()
+        ekg_response = self._call_ekg()
+        if not ekg_response.is_valid():
+            print(f"Invalid EkgResponse received, skipping. {ekg_response}")
+            return
+
         self.count += 1
         print(f"Run: {self.count} - last_block_num: {self.last_block_num}")
-        # If its the first round, just set the last_ values and continue
-        if self.count == 1:
-            self.last_slot_num = slot_num
-            self.last_block_num = block_num
+        if self.count == 1: # If its the first round, set last_* values and continue
+            self.last_slot_num = ekg_response.slot_num
+            self.last_block_num = ekg_response.block_num
             #last_fork_height = fork_height
             return
 
-        # blocks and forks should hold the numbers of the blocks/forks that
-        # have been reported by ekg.
-        blocks, forks = [], []
-        _db = block_num - self.last_block_num
-        # print(f"_db {_db}")
-        if _db and not _db > 5:
-            for i in range(1, _db + 1):
-                #print(f"Range {i}")
-                blocks.append(self.last_block_num + i)
-        self.last_block_num = block_num
+        block_nums = self.calculate_block_nums_from_ekg(ekg_response.block_num)
+        if not block_nums: # No change in block_num found, come back later
+            return
+        blocklogs = Blocklog.blocklogs_from_block_nums(block_nums, self.log_dir)
+
+        self.last_block_num = ekg_response.block_num
+        self.last_slot_num = ekg_response.slot_num
+
         # Now, For each id in blocks we want to create a
         # Blocklog which is a list of all the relevant entries of the logfile
         # That Blocklog is then pushed into the Queue, for the consumer to process
-        for blocklog in blocklogs(blocks, self.log_dir):
-            print(f"Putting in Queue.")
-            print(blocklog)
+        for blocklog in blocklogs:
+            print(f"Enqueue: {blocklog}")
             self.q.put(blocklog)
-        # Same thing for forks ...
-        self.last_slot_num = slot_num
         time.sleep(1)
 
     def run(self):
+        """Runs the Producer, forever!
+        The 'except Exception' is certainly something we want to discuss at some
+        point. For now i wanted a simpler _run implementation that does  not need
+        to worry about the loop or exceptions and still will keep
+        the thread running.
+        The loop could also be done in the App and then have the thread be
+        recreated, see App::run()
+        """
         while True:
             try:
                 self._run()
@@ -83,7 +130,7 @@ class BlocklogProducer(threading.Thread):
                 print(traceback.format_exc())
                 time.sleep(1)
 
-    def _call_ekg(self) -> tuple:
+    def _call_ekg(self) -> EkgResponse:
         """Calls the EKG Port for as long as needed and returns a response if
         there is one. It is not inspecting the block data itself, meaning it will
         just return a tuple of the block_num, the forks and slit_num."""
@@ -95,17 +142,7 @@ class BlocklogProducer(threading.Thread):
                 )
                 response = urlopen(req)
                 if response.status == 200:
-                    ekg_data = json.loads(response.read())
-                    # pprint(json.loads(response.read()))
-                    metrics = ekg_data.get("cardano").get("node").get("metrics")
-                    slot_num = metrics.get("slotNum").get("int").get("val")
-                    block_num = metrics.get("blockNum").get("int").get("val")
-                    # forks = _metrics.get("forks").get("int").get("val")
-                    # forks may or may not be in ekg.json
-                    if slot_num > 0 and block_num > 0: # and forks > 0:
-                        return (slot_num, block_num) #, forks)
-                    else:
-                        print(f"Invalid EKG Response returned {response}")
+                    return EkgResponse(json.loads(response.read()))
                 else:
                     print(f"Got {response.status} {response.reason}")
             except URLError as _e:
@@ -114,6 +151,7 @@ class BlocklogProducer(threading.Thread):
                 print(f"ConnectionResetError")
             finally:
                 time.sleep(1)
+
 
 class BlocklogConsumer(threading.Thread):
     """Consumes every Blocklog that is put into the queue.
@@ -185,4 +223,5 @@ class App:
 
         consumer.join()
         print("consumer joined")
+
         #self.q.join()

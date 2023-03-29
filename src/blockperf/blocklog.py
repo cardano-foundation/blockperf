@@ -6,51 +6,9 @@ from datetime import datetime
 
 BLOCKLOGSDIR="/home/msch/src/cf/blockperf.py/blocklogs"
 
-def read_logfiles(log_dir: str) -> list:
-    """Reads all logfiles from """
-    from timeit import default_timer as timer
-    start = timer()
-    logfiles = list(Path(log_dir).glob("node-*"))
-    logfiles.sort()
-    # pprint(logfiles)
-    log_lines = []
-    for logfile in logfiles[-3:]:
-        with logfile.open() as f:
-            log_lines.extend(f.readlines())
-    end = timer()
-    res = end - start # time it took to run
-    return log_lines
 
-def blocklogs(block_nums: list, log_dir: str) -> None:
-    """Receives a list of block_num's and yields a Blocklog Instance for each.
-    """
-    loglines = read_logfiles(log_dir)
-    def _find_hash_by_num(block_num: str) -> str:
-        for line in reversed(loglines):
-            if block_num in line:
-                # Parse the line into a dict and return the hash
-                line = dict(json.loads(line))
-                hash = line.get("data").get("block")
-                print(f"Found {hash}")
-                return hash
 
-    def _find_lines_by_hash(hash: str) -> list:
-        lines = []
-        for line in loglines:
-            if hash in line:
-                lines.append(line)
-        # Debug output in file
-        filepath = Path(BLOCKLOGSDIR).joinpath(f"{hash[0:6]}.blocklog")
-        filepath.parent.mkdir(parents=True, exist_ok=True)
-        with filepath.open("w", encoding="utf-8") as f:
-            f.writelines(lines)
-        return lines
 
-    for block_num in block_nums:
-        print(f"Find blocklogs for {block_num}")
-        hash = _find_hash_by_num(str(block_num))
-        lines = [BlocklogLine(json.loads(line)) for line in _find_lines_by_hash(hash)]
-        yield Blocklog(lines)
 
 class LogKind(Enum):
     """The Kind of a logline."""
@@ -72,35 +30,59 @@ class BlocklogLine:
     block_hash: str = field(init=False, default="")
     block_num: int = field(init=False, default=0)
     slot_num: int = field(init=False, default=0)
-    peer_addr: str = field(init=False, default="")
-    peer_port: str = field(init=False, default="")
+    remote_addr: str = field(init=False, default="")
+    remote_port: str = field(init=False, default="")
+    local_addr: str = field(init=False, default="")
+    local_port: str = field(init=False, default="")
     delay: float = field(init=False, default=0.0)
+    size: int = field(init=False, default=0.0)
     newtip: str  = field(init=False, default="")
     chain_length_delta: int = field(init=False, default=0)
+    env: str = field(init=False, default="")
 
     def __post_init__(self, logline: dict):
-        # Assuming that at and data.kind are the only fields that are always
-        # at the same position, everything else is depending on the kind!
+        """Initilize all class attributes by parsing the given logline.
+        Assuming that at and data.kind fields will be there for all line types.
+        All others are only dependant upon the lines' kind.
+
+        dict.get() never raises KeyError because default is always set to None.
+        However, that also means the defaults from above for the class attributes
+        are not reliable ...
+        """
         #self._logline = logline
-        self.at = self._fetch_at(logline.get("at"))
-        _data = logline.get("data")
-        self.kind = self._fetch_kind(_data.get("kind"))
+
+        # Unfortunatly datetime.datetime.fromisoformat() can not actually handle
+        # all ISO 8601 strings. At least not in versions below 3.11 ... :(
+        self.at = datetime.strptime(logline.get("at"), "%Y-%m-%dT%H:%M:%S.%f%z")
+
+        self.kind = self._fetch_kind(logline.get("data").get("kind"))
+
         if self.kind == LogKind.TRACE_DOWNLOADED_HEADER.name:
-            self.block_hash = _data.get("block")
-            self.block_num = _data.get("blockNo").get("unBlockNo")
-            self.slot_num = _data.get("slot", 0)
-            self.peer_addr, self.peer_port = self._fetch_peer(_data.get("peer"))
+            self.block_hash = logline.get("data").get("block")
+            self.block_num = logline.get("data").get("blockNo").get("unBlockNo")
+            self.slot_num = logline.get("data").get("slot", 0)
+            self.remote_addr = logline.get("data").get("peer").get("remote").get("addr")
+            self.remote_port = logline.get("data").get("peer").get("remote").get("port")
         elif self.kind == LogKind.SEND_FETCH_REQUEST.name:
-            self.block_hash = _data.get("head")
-            self.peer_addr, self.peer_port = self._fetch_peer(_data.get("peer"))
+            self.block_hash = logline.get("data").get("head")
+            self.remote_addr = logline.get("data").get("peer").get("remote").get("addr")
+            self.remote_port = logline.get("data").get("peer").get("remote").get("port")
         elif self.kind == LogKind.COMPLETED_BLOCK_FETCH.name:
-            self.peer_addr, self.peer_port = self._fetch_peer(_data.get("peer"))
-            self.delay = _data.get("delay")
+            self.env = logline.get("env")
+            self.delay = logline.get("data").get("delay")
+            self.size = logline.get("data").get("size")
+            self.remote_addr = logline.get("data").get("peer").get("remote").get("addr")
+            self.remote_port = logline.get("data").get("peer").get("remote").get("port")
+            self.local_addr = logline.get("data").get("peer").get("local").get("addr")
+            self.local_port = logline.get("data").get("peer").get("local").get("port")
+
         elif self.kind == LogKind.ADDED_CURRENT_CHAIN.name:
-            self.newtip = _data.get("newtip")
-            self.chain_length_delta = _data.get("chainLengthDelta")
+            self.newtip = logline.get("data").get("newtip")
+            self.chain_length_delta = logline.get("data").get("chainLengthDelta")
         elif self.kind == LogKind.SWITCHED_TO_FORK.name:
-            pass
+            self.newtip = logline.get("data").get("newtip")
+            self.chain_length_delta = logline.get("data").get("chainLengthDelta")
+            self.real_fork = logline.get("data").get("realFork")
         elif self.kind == LogKind.UNKNOWN.name:
             pass
         else:
@@ -111,33 +93,16 @@ class BlocklogLine:
         if self.kind in (LogKind.TRACE_DOWNLOADED_HEADER.name , LogKind.SEND_FETCH_REQUEST.name):
             return f"BlocklogLine(kind={self.kind}, at={self.at}, hash={self.block_hash[0:6]}, peer={self.peer_addr}:{self.peer_port})"
         elif self.kind == LogKind.COMPLETED_BLOCK_FETCH.name:
-            return f"BlocklogLine(kind={self.kind}, at={self.at}, peer={self.peer_addr}:{self.peer_port})"
+            return f"BlocklogLine(kind={self.kind}, at={self.at}, size={self.size}, peer={self.peer_addr}:{self.peer_port})"
         else:
             return f"BlocklogLine(kind={self.kind}, at={self.at})"
 
-    def _fetch_at(self, at: str) -> datetime:
-        """ Return datetime object from ISO8601 String
-
-        Unfortunatly datetime.datetime.fromisoformat() can not actually handle
-        all ISO 8601 strings. At least not in versions below 3.11 ...
-
-        the dateutil library could be an option or as i did for now with strptime()
-
-        https://dateutil.readthedocs.io/en/stable/parser.html#dateutil.parser.isoparse
-        """
-        # example: 2023-03-28T08:25:10.48Z
-        return datetime.strptime(at, "%Y-%m-%dT%H:%M:%S.%f%z")
-
     def _fetch_kind(self, kind: str) -> LogKind:
+        """Returns the LogKind attribute of given kind string"""
         for k in LogKind:
             if k.value in kind:
                 return k.name
         return LogKind.UNKNOWN
-
-    def _fetch_peer(self, peer: str) -> tuple:
-        _addr = peer.get("remote").get("addr")
-        _port = peer.get("remote").get("port")
-        return (_addr, _port)
 
 @dataclass
 class Blocklog:
@@ -165,6 +130,7 @@ class Blocklog:
 
     AddedToCurrentChain
     SwitchedToAFork
+
     """
     blocklog_lines: InitVar[BlocklogLine]
     _lines: list = field(init=False, default_factory=list)
@@ -174,36 +140,119 @@ class Blocklog:
     trace_headers: list = field(init=False, default_factory=list)
     fetch_requests: list = field(init=False, default_factory=list)
     completed_blocks: list = field(init=False, default_factory=list)
+    size: int = field(init=False, default=0.0)
+    chain_length_delta: int = field(init=False, default=0)
+    is_forkswitch: bool = field(init=False, default=False)
+    is_addtochain: bool = field(init=False, default=False)
 
     def __post_init__(self, blocklog_lines):
-        from pprint import pprint
-        # TODO: More sophisticated processing ...
         # Ensure lines are ordered by 'at'
         blocklog_lines.sort(key=lambda x: x.at)
-        self._lines = blocklog_lines
 
-        #line: BlocklogLine = blocklog_lines[0]
-        #self.block_hash = line.block_hash
-        #self.block_num = line.block_num
-        #self.slot_num = line.slot_num
+        self._lines = blocklog_lines  # TODO: Remove !?
 
+        line: BlocklogLine
         for line in blocklog_lines:
             if line.kind == LogKind.TRACE_DOWNLOADED_HEADER.name:
                 self.trace_headers.append(line)
+                self.block_hash = line.block_hash
+                self.slot_num = line.slot_num
+                self.block_num = line.block_num
             elif line.kind == LogKind.SEND_FETCH_REQUEST.name:
                 self.fetch_requests.append(line)
             elif line.kind == LogKind.COMPLETED_BLOCK_FETCH.name:
                 self.completed_blocks.append(line)
+                self.size = line.size
+                self.block_hash = line.block_hash
+            elif line.kind == LogKind.ADDED_CURRENT_CHAIN.name:
+                self.is_addtochain = True
+                self.chain_length_delta = line.chain_length_delta
+            elif line.kind == LogKind.SWITCHED_TO_FORK.name:
+                self.is_forkswitch = True
+                self.chain_length_delta = line.chain_length_delta
+
+        # It should never happen that AddedToChain and SwitchedToFork are present
+        # within the same Blocklog ... what if it does ?
+        assert not self.is_addtochain or not self.is_forkswitch, f"Blocklog for {line.block_hash[0:11]} has AddedToCurrentChain and SwitchedToAFork!"
+        # self.sanity_check()
 
     def __str__(self) -> str:
         return f"Blocklog(lines={len(self._lines)}, headers_received={len(self.trace_headers)}, fetch_requests={len(self.fetch_requests)}, completed_blocks={len(self.completed_blocks)})"
 
+    def sanity_check(self):
+        if self.is_addtochain and self.is_forkswitch:
+            # this should really not happen... but what if it does?
+            print("This Blocklog seems to be both, a forkswtich and addedtochain")
+
     def to_message(self) -> str:
-        pass
+        """Might as well live outside of this class ... """
+        message = dict({
+            "magic": "magic",
+            "bpVersion" : "$bpVersion" ,
+            "blockNo" : "$blockNo" ,
+            "slotNo" : "$slotNo" ,
+            "blockHash" : "$blockHash",
+            "blockSize" : "$blockSize",
+            "headerRemoteAddr" : "$headerRemoteAddr",
+            "headerRemotePort" : "$headerRemotePort",
+            "headerDelta" : "$headerDelta",
+            "blockReqDelta" : "$blockReqDelta",
+            "blockRspDelta" : "$blockRspDelta",
+            "blockAdoptDelta" : "$blockAdoptDelta",
+            "blockRemoteAddress": "$blockRemoteAddress",
+            "blockRemotePort": "$blockRemotePort",
+            "blockLocalAddress" : "$blockLocalAddress",
+            "blockLocalPort": "$blockLocalPort",
+            "blockG" : "$blockG"
+        })
+        return json.dumps(message)
 
-    def is_forkswitch(self) -> bool:
-        pass
+    @classmethod
+    def read_logfiles(cls, log_dir: str) -> list:
+        """Reads all logfiles from """
+        from timeit import default_timer as timer
+        start = timer()
+        logfiles = list(Path(log_dir).glob("node-*"))
+        logfiles.sort()
+        # pprint(logfiles)
+        log_lines = []
+        for logfile in logfiles[-3:]:
+            with logfile.open() as f:
+                log_lines.extend(f.readlines())
+        end = timer()
+        res = end - start # time it took to run
+        return log_lines
 
+    @classmethod
+    def blocklogs_from_block_nums(cls: "Blocklog", block_nums: list, log_dir: str) -> None:
+        """Receives a list of block_num's and yields a Blocklog Instance for each.
+        """
+        loglines = Blocklog.read_logfiles(log_dir)
+        def _find_hash_by_num(block_num: str) -> str:
+            for line in reversed(loglines):
+                if block_num in line:
+                    # Parse the line into a dict and return the hash
+                    line = dict(json.loads(line))
+                    hash = line.get("data").get("block")
+                    print(f"Found {hash}")
+                    return hash
 
-    def is_addtochain(self) -> bool:
-        pass
+        def _find_lines_by_hash(hash: str) -> list:
+            lines = []
+            for line in loglines:
+                if hash in line:
+                    lines.append(line)
+            # Debug output in file
+            filepath = Path(BLOCKLOGSDIR).joinpath(f"{hash[0:6]}.blocklog")
+            filepath.parent.mkdir(parents=True, exist_ok=True)
+            with filepath.open("w", encoding="utf-8") as f:
+                f.writelines(lines)
+            return lines
+
+        blocklogs = []
+        for block_num in block_nums:
+            print(f"Find blocklogs for {block_num}")
+            hash = _find_hash_by_num(str(block_num))
+            lines = [BlocklogLine(json.loads(line)) for line in _find_lines_by_hash(hash)]
+            blocklogs.append(Blocklog(lines))
+        return blocklogs
