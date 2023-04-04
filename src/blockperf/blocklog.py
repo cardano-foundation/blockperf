@@ -2,16 +2,25 @@ from dataclasses import dataclass, field, InitVar
 from pathlib import Path
 import json
 from enum import Enum
-from datetime import datetime
+from datetime import datetime, timezone
+from blockperf import __version__ as blockperf_version
+from typing import Union
 
-BLOCKLOGSDIR="/home/msch/src/cf/blockperf.py/blocklogs"
+BLOCKLOGSDIR = "/home/msch/src/cf/blockperf.py/blocklogs"
 
 
-
+# Unixtimestamps of starttimes of different networks
+# See https://www.epochconverter.com/
+network_starttime = {
+    "preprod": 1660003200,
+    "mainnet": 1591566291,
+    "preview": 1655683200,
+}
 
 
 class LogKind(Enum):
     """The Kind of a logline."""
+
     TRACE_DOWNLOADED_HEADER = "TraceDownloadedHeader"
     SEND_FETCH_REQUEST = "SendFetchRequest"
     COMPLETED_BLOCK_FETCH = "CompletedBlockFetch"
@@ -19,24 +28,27 @@ class LogKind(Enum):
     SWITCHED_TO_FORK = "SwitchedToAFork"
     UNKNOWN = "Unknown"
 
+
 @dataclass
 class BlocklogLine:
     """
     Note: Many of the attributes are only set for specific kinds of loglines!
     """
+
     logline: InitVar[dict]
     kind: LogKind = field(init=False, default=LogKind.UNKNOWN)
     at: datetime = field(init=False, default=None)
     block_hash: str = field(init=False, default="")
     block_num: int = field(init=False, default=0)
     slot_num: int = field(init=False, default=0)
+    deltaq_g: float = field(init=False, default=0.0)
     remote_addr: str = field(init=False, default="")
     remote_port: str = field(init=False, default="")
     local_addr: str = field(init=False, default="")
     local_port: str = field(init=False, default="")
     delay: float = field(init=False, default=0.0)
     size: int = field(init=False, default=0.0)
-    newtip: str  = field(init=False, default="")
+    newtip: str = field(init=False, default="")
     chain_length_delta: int = field(init=False, default=0)
     env: str = field(init=False, default="")
 
@@ -49,7 +61,7 @@ class BlocklogLine:
         However, that also means the defaults from above for the class attributes
         are not reliable ...
         """
-        #self._logline = logline
+        # self._logline = logline
 
         # Unfortunatly datetime.datetime.fromisoformat() can not actually handle
         # all ISO 8601 strings. At least not in versions below 3.11 ... :(
@@ -65,6 +77,7 @@ class BlocklogLine:
             self.remote_port = logline.get("data").get("peer").get("remote").get("port")
         elif self.kind == LogKind.SEND_FETCH_REQUEST.name:
             self.block_hash = logline.get("data").get("head")
+            self.deltaq_g = logline.get("data").get("deltaq").get("G")
             self.remote_addr = logline.get("data").get("peer").get("remote").get("addr")
             self.remote_port = logline.get("data").get("peer").get("remote").get("port")
         elif self.kind == LogKind.COMPLETED_BLOCK_FETCH.name:
@@ -89,13 +102,18 @@ class BlocklogLine:
             pass
 
     def __str__(self):
-        #print(self._logline)
-        if self.kind in (LogKind.TRACE_DOWNLOADED_HEADER.name , LogKind.SEND_FETCH_REQUEST.name):
-            return f"BlocklogLine(kind={self.kind}, at={self.at}, hash={self.block_hash[0:6]}, peer={self.peer_addr}:{self.peer_port})"
+        # print(self._logline)
+        if self.kind in (
+            LogKind.TRACE_DOWNLOADED_HEADER.name,
+            LogKind.SEND_FETCH_REQUEST.name,
+        ):
+            return f"BlocklogLine(slot_num={self.slot_num}, kind={self.kind}, at={self.at}, hash={self.block_hash[0:6]}, peer={self.remote_addr}:{self.remote_port})"
         elif self.kind == LogKind.COMPLETED_BLOCK_FETCH.name:
-            return f"BlocklogLine(kind={self.kind}, at={self.at}, size={self.size}, peer={self.peer_addr}:{self.peer_port})"
+            return f"BlocklogLine(slot_num={self.slot_num}, kind={self.kind}, at={self.at}, size={self.size}, peer={self.remote_addr}:{self.remote_port})"
         else:
-            return f"BlocklogLine(kind={self.kind}, at={self.at})"
+            return f"BlocklogLine(slot_num={self.slot_num}, kind={self.kind}, at={self.at})"
+
+    # def __eq__(self, other):
 
     def _fetch_kind(self, kind: str) -> LogKind:
         """Returns the LogKind attribute of given kind string"""
@@ -103,6 +121,7 @@ class BlocklogLine:
             if k.value in kind:
                 return k.name
         return LogKind.UNKNOWN
+
 
 @dataclass
 class Blocklog:
@@ -131,86 +150,274 @@ class Blocklog:
     AddedToCurrentChain
     SwitchedToAFork
 
+
+    Calculating slot_time:
+    To calculate the slottime we must know the networks starttime. From there
+    add the number of slots plus their slot lenght. For simpliciy, we currently
+    assume that the slot time is 1 second. If the network has a different slot
+    lenght, this must be taken into account! So if the slot_length is 1
+    then we can just add the number of slots to the unixtimestamp of the network
+    starttime (see `network_starttime` above).
+    Example:slot_time of slot 24494589 in preprod is:
+            slot_time = 24494589 + 1660003200
+
     """
+
     blocklog_lines: InitVar[BlocklogLine]
     _lines: list = field(init=False, default_factory=list)
-    block_hash: str = field(init=False)
-    block_num: str = field(init=False)
-    slot_num: str = field(init=False)
-    trace_headers: list = field(init=False, default_factory=list)
-    fetch_requests: list = field(init=False, default_factory=list)
-    completed_blocks: list = field(init=False, default_factory=list)
-    size: int = field(init=False, default=0.0)
-    chain_length_delta: int = field(init=False, default=0)
+    first_trace_header: BlocklogLine = field(init=False, default=None)
+    first_completed_block: BlocklogLine = field(init=False, default=None)
+    fetch_request_completed_block: BlocklogLine = field(init=False, default=None)
+    first_add_to_chain: BlocklogLine = field(init=False, default=None)
+    first_switch_to_fork: BlocklogLine = field(init=False, default=None)
     is_forkswitch: bool = field(init=False, default=False)
     is_addtochain: bool = field(init=False, default=False)
 
     def __post_init__(self, blocklog_lines):
         # Ensure lines are ordered by 'at'
         blocklog_lines.sort(key=lambda x: x.at)
-
         self._lines = blocklog_lines  # TODO: Remove !?
-
+        _trace_headers, _fetch_requests, _completed_blocks, _addstocurrentchain = [], [], [], []
         line: BlocklogLine
         for line in blocklog_lines:
             if line.kind == LogKind.TRACE_DOWNLOADED_HEADER.name:
-                self.trace_headers.append(line)
-                self.block_hash = line.block_hash
-                self.slot_num = line.slot_num
-                self.block_num = line.block_num
+                _trace_headers.append(line)
             elif line.kind == LogKind.SEND_FETCH_REQUEST.name:
-                self.fetch_requests.append(line)
+                _fetch_requests.append(line)
             elif line.kind == LogKind.COMPLETED_BLOCK_FETCH.name:
-                self.completed_blocks.append(line)
-                self.size = line.size
-                self.block_hash = line.block_hash
+                _completed_blocks.append(line)
             elif line.kind == LogKind.ADDED_CURRENT_CHAIN.name:
                 self.is_addtochain = True
-                self.chain_length_delta = line.chain_length_delta
+                _addstocurrentchain.append(line)
             elif line.kind == LogKind.SWITCHED_TO_FORK.name:
                 self.is_forkswitch = True
-                self.chain_length_delta = line.chain_length_delta
+                self.first_switch_to_fork = line
 
-        # It should never happen that AddedToChain and SwitchedToFork are present
-        # within the same Blocklog ... what if it does ?
-        assert not self.is_addtochain or not self.is_forkswitch, f"Blocklog for {line.block_hash[0:11]} has AddedToCurrentChain and SwitchedToAFork!"
-        # self.sanity_check()
+
+        self.first_trace_header = _trace_headers[0] if _trace_headers else None
+        self.first_completed_block = _completed_blocks[0] if _completed_blocks else None
+
+        # Some assumptions
+        # It should never happen that AddedToChain and SwitchedToFork are present both True or both false
+        #if self.is_addtochain or self.is_forkswitch:
+        #    msg = f"Blocklog for {self.block_hash_short} has AddedToCurrentChain and SwitchedToAFork!"
+        #    print(msg)
+        #if not self.is_addtochain and not self.is_forkswitch:
+        #    msg = f"Blocklog for {self.block_hash_short} has neither AddedToCurrentChain or SwitchedToAFork!"
+        #    print(msg)
+
+        self.first_add_to_chain = _addstocurrentchain[0] if _addstocurrentchain else None
+
+        # Find the FetchRequest for the first CompletedBlock by comparing remote_addr and _port
+        _fetch_request = list(
+            filter(
+                lambda x: x.remote_addr == self.first_completed_block.remote_addr
+                and x.remote_port == self.first_completed_block.remote_port,
+                _fetch_requests,
+            )
+        )
+        assert _fetch_request, f"No FetchRequest found for {self.first_completed_block}"
+        self.fetch_request_completed_block = _fetch_request.pop()
+
+        # Find the TraceHeader for previously found FetchRequest (the one for the CompletedBlock)
+        #_trace_header = list(
+        #    filter(
+        #        lambda x: x.remote_addr == self.fetch_request_completed_block.remote_addr
+        #        and x.remote_port == self.fetch_request_completed_block.remote_port,
+        #        _trace_headers
+        #    )
+        #)
+        #assert _trace_header, f"No TraceHeader found for {self.fetch_request_completed_block}"
+        #trace_header_completed_block = _trace_header.pop()
 
     def __str__(self) -> str:
-        return f"Blocklog(lines={len(self._lines)}, headers_received={len(self.trace_headers)}, fetch_requests={len(self.fetch_requests)}, completed_blocks={len(self.completed_blocks)})"
+        len_lines = len(self._lines)
+        #len_headers = len(_trace_headers)
+        #len_fetch_requests = len(_fetch_requests)
+        #len_completed_blocks = len(_completed_blocks)
+        #return f"Blocklog(lines={len_lines}, headers_received={len_headers}, fetch_requests={len_fetch_requests}, completed_blocks={len_completed_blocks})"
+        return f"Blocklog(hash={self.block_hash_short}, lines={len_lines}, remote={self.block_remote_addr}:{self.block_remote_port}, header_delta={self.header_delta})"
 
-    def sanity_check(self):
-        if self.is_addtochain and self.is_forkswitch:
-            # this should really not happen... but what if it does?
-            print("This Blocklog seems to be both, a forkswtich and addedtochain")
+    @property
+    def header_remote_addr(self) -> str:
+        if not self.first_trace_header:
+            return ""
+        return self.first_trace_header.remote_addr
+
+
+    @property
+    def header_remote_port(self) -> str:
+        if not self.first_trace_header:
+            return ""
+        return self.first_trace_header.remote_port
+
+    @property
+    def header_delta(self) -> Union[datetime, int]:
+        if not self.first_trace_header or not self.slot_time:
+            return 0
+        return self.first_trace_header.at - self.slot_time
+
+    @property
+    def block_num(self) -> int:
+        if not self.first_trace_header:
+            return 0
+        return self.first_trace_header.block_num
+
+    @property
+    def block_hash(self) -> str:
+        if not self.first_trace_header:
+            return ""
+        return self.first_trace_header.block_hash
+
+    @property
+    def block_hash_short(self) -> str:
+        if not self.block_hash:
+            return ""
+        return self.block_hash[0:10]
+
+    @property
+    def slot_num(self) -> int:
+        if not self.first_trace_header:
+            return 0
+        return self.first_trace_header.slot_num
+
+    @property
+    def slot_time(self) -> datetime:
+        _network_start = network_starttime.get("preview")
+        print(f"_network_start {_network_start} self.slot_num {self.slot_num}")
+        _slot_time = _network_start + self.slot_num
+        print(f"_slot_time {_slot_time}  # unixtimestamp")
+        slot_time = datetime.fromtimestamp(_slot_time, tz=timezone.utc)
+        print(f"slot_time {slot_time} # real datetime ")
+        return slot_time
+
+    @property
+    def block_size(self) -> int:
+        if not self.first_completed_block:
+            return 0
+        return self.first_completed_block.size
+
+    @property
+    def block_delay(self) -> int:
+        if not self.first_completed_block:
+            return 0
+        return self.first_completed_block.delay
+
+    @property
+    def block_request_delta(self) -> datetime:
+        if not self.fetch_request_completed_block:
+            return 0
+        return self.fetch_request_completed_block.at - self.first_trace_header.at
+
+    @property
+    def block_response_delta(self) -> datetime:
+        if not self.fetch_request_completed_block:
+            return 0
+        return self.first_completed_block.at - self.fetch_request_completed_block.at
+
+    @property
+    def block_adopt(self):
+        if self.first_add_to_chain:
+            return self.first_add_to_chain.at
+        elif self.first_switch_to_fork:
+            self.first_switch_to_fork.at
+        else:
+            return 0
+
+    @property
+    def block_adopt_delta(self) -> Union[datetime, int]:
+        if self.first_add_to_chain:
+            return self.first_add_to_chain.at - self.first_completed_block.at
+        elif self.first_switch_to_fork:
+            self.first_switch_to_fork.at - self.first_completed_block.at
+        else:
+            return 0
+
+    @property
+    def block_g(self) -> float:
+        if not self.fetch_request_completed_block:
+            return 0
+        return self.fetch_request_completed_block.deltaq_g
+
+    @property
+    def block_remote_addr(self) -> str:
+        if not self.first_completed_block:
+            return ""
+        return self.first_completed_block.remote_addr
+
+    @property
+    def block_remote_port(self) -> str:
+        if not self.first_completed_block:
+            return ""
+        return self.first_completed_block.remote_port
 
     def to_message(self) -> str:
-        """Might as well live outside of this class ... """
-        message = dict({
-            "magic": "magic",
-            "bpVersion" : "$bpVersion" ,
-            "blockNo" : "$blockNo" ,
-            "slotNo" : "$slotNo" ,
-            "blockHash" : "$blockHash",
-            "blockSize" : "$blockSize",
-            "headerRemoteAddr" : "$headerRemoteAddr",
-            "headerRemotePort" : "$headerRemotePort",
-            "headerDelta" : "$headerDelta",
-            "blockReqDelta" : "$blockReqDelta",
-            "blockRspDelta" : "$blockRspDelta",
-            "blockAdoptDelta" : "$blockAdoptDelta",
-            "blockRemoteAddress": "$blockRemoteAddress",
-            "blockRemotePort": "$blockRemotePort",
-            "blockLocalAddress" : "$blockLocalAddress",
-            "blockLocalPort": "$blockLocalPort",
-            "blockG" : "$blockG"
-        })
-        return json.dumps(message)
+        """first_trace_header
+
+        * headerRemoteAddr  fill in from peer that first send TraceHeader
+        * headerRemotePort  fill in from peer that first send TraceHeader
+        * headerDelta       Is the time from the slot_time of this block
+                            until the node received the first header
+                            FirstTraceHeader.at - slot_time
+                            We want to know the delta between when the header could
+                            be available (beginning of the slot)  until its actually
+                            available to this node (trace header received)
+
+        * blockReqDelta     Find the FetchRequest that belongs to first CompletedBlock
+                            FetchRequest.at - first TraceHeader.at
+                            We want to know how long it took the node from first
+                            seeing the header until it requested that header
+
+        * blockRspDelta     Find the FetchRequest that belongs to first CompletedBlock
+                            CompletedBlock at - FetchRequest at
+                            We want to know how long it took the other node to
+                            complete the send of the block after requesting it
+
+        * blockAdoptDelta   We want to know how long it took the node to successfully
+                            adopt a block after it has completed receiving it
+                            first AddToCurrentChain.at - first CompletedBlock.at
+
+        * blockRemoteAddress  # fill in from peer that first resulted in CompletedBlock
+        * blockRemotePort     # fill in from peer that first resulted in CompletedBlock
+        * blockLocalAddress   # Taken from blockperf config
+        * blockLocalPort      # Taken from blockperf config
+        * blockG              # Find FetchRequest for first CompletedBlock (remote addr/port match)
+                              # Take deltaq.G from that FetchRequest
+
+
+
+        """
+        print()
+        message = {
+                "magic": "XXX",
+                "bpVersion": blockperf_version,
+                "blockNo": self.block_num,
+                "slotNo": self.slot_num,
+                "blockHash": self.block_hash,
+                "blockSize": self.size,
+                "headerRemoteAddr": self.header_remote_addr,
+                "headerRemotePort": self.header_remote_port,
+                "headerDelta": self.header_delta,
+                "blockReqDelta": self.block_request_delta,
+                "blockRspDelta": self.block_response_delta,
+                "blockAdoptDelta": self.block_adopt_delta,
+                "blockRemoteAddress": self.block_remote_addr,
+                "blockRemotePort": self.block_remote_port,
+                "blockLocalAddress": "",  # Taken from blockperf config
+                "blockLocalPort": "",  # Taken from blockperf config
+                "blockG": self.block_g,
+            }
+
+        #from pprint import pprint
+        #pprint(message)
+
+        return json.dumps(message, default=str)
 
     @classmethod
     def read_logfiles(cls, log_dir: str) -> list:
-        """Reads all logfiles from """
+        """Reads all logfiles from"""
         from timeit import default_timer as timer
+
         start = timer()
         logfiles = list(Path(log_dir).glob("node-*"))
         logfiles.sort()
@@ -220,25 +427,31 @@ class Blocklog:
             with logfile.open() as f:
                 log_lines.extend(f.readlines())
         end = timer()
-        res = end - start # time it took to run
+        res = end - start  # time it took to run
         return log_lines
 
     @classmethod
-    def blocklogs_from_block_nums(cls: "Blocklog", block_nums: list, log_dir: str) -> None:
-        """Receives a list of block_num's and yields a Blocklog Instance for each.
-        """
+    def blocklogs_from_block_nums(
+        cls: "Blocklog", block_nums: list, log_dir: str
+    ) -> None:
+        """Receives a list of block_num's and yields a Blocklog Instance for each."""
         loglines = Blocklog.read_logfiles(log_dir)
+
         def _find_hash_by_num(block_num: str) -> str:
             for line in reversed(loglines):
-                if block_num in line:
-                    # Parse the line into a dict and return the hash
+                # Find line that is a TraceHeader and has given block_num in it to determine block_hash
+                if block_num in line and "ChainSyncClientEvent.TraceDownloadedHeader" in line:
                     line = dict(json.loads(line))
                     hash = line.get("data").get("block")
                     print(f"Found {hash}")
                     return hash
 
+        def _has_kind(line):
+            pass
+
         def _find_lines_by_hash(hash: str) -> list:
             lines = []
+            #lines = list(filter(lambda x: hash in x, loglines))
             for line in loglines:
                 if hash in line:
                     lines.append(line)
@@ -253,6 +466,8 @@ class Blocklog:
         for block_num in block_nums:
             print(f"Find blocklogs for {block_num}")
             hash = _find_hash_by_num(str(block_num))
-            lines = [BlocklogLine(json.loads(line)) for line in _find_lines_by_hash(hash)]
+            lines = [
+                BlocklogLine(json.loads(line)) for line in _find_lines_by_hash(hash)
+            ]
             blocklogs.append(Blocklog(lines))
         return blocklogs
