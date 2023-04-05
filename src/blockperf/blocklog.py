@@ -244,7 +244,6 @@ class Blocklog:
             return ""
         return self.first_trace_header.remote_addr
 
-
     @property
     def header_remote_port(self) -> str:
         if not self.first_trace_header:
@@ -284,11 +283,11 @@ class Blocklog:
     @property
     def slot_time(self) -> datetime:
         _network_start = network_starttime.get("preview")
-        print(f"_network_start {_network_start} self.slot_num {self.slot_num}")
+        #print(f"_network_start {_network_start} self.slot_num {self.slot_num}")
         _slot_time = _network_start + self.slot_num
-        print(f"_slot_time {_slot_time}  # unixtimestamp")
+        #print(f"_slot_time {_slot_time}  # unixtimestamp")
         slot_time = datetime.fromtimestamp(_slot_time, tz=timezone.utc)
-        print(f"slot_time {slot_time} # real datetime ")
+        #print(f"slot_time {slot_time} # real datetime ")
         return slot_time
 
     @property
@@ -383,9 +382,6 @@ class Blocklog:
         * blockLocalPort      # Taken from blockperf config
         * blockG              # Find FetchRequest for first CompletedBlock (remote addr/port match)
                               # Take deltaq.G from that FetchRequest
-
-
-
         """
         print()
         message = {
@@ -443,7 +439,7 @@ class Blocklog:
                 if block_num in line and "ChainSyncClientEvent.TraceDownloadedHeader" in line:
                     line = dict(json.loads(line))
                     hash = line.get("data").get("block")
-                    print(f"Found {hash}")
+                    #print(f"Found {hash}")
                     return hash
 
         def _has_kind(line):
@@ -464,7 +460,7 @@ class Blocklog:
 
         blocklogs = []
         for block_num in block_nums:
-            print(f"Find blocklogs for {block_num}")
+            #print(f"Find blocklogs for {block_num}")
             hash = _find_hash_by_num(str(block_num))
             lines = [
                 BlocklogLine(json.loads(line)) for line in _find_lines_by_hash(hash)

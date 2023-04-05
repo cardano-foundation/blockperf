@@ -18,6 +18,8 @@ import logging
 from configparser import ConfigParser
 from blockperf.blocklog import Blocklog
 from dataclasses import dataclass, field, InitVar
+import paho.mqtt.client as mqtt # ?
+
 
 logging.basicConfig(level=logging.DEBUG, format="(%(threadName)-9s) %(message)s")
 
@@ -45,7 +47,6 @@ class EkgResponse:
         if self.slot_num > 0 and self.block_num > 0:
             return True
         return False
-
 
 class BlocklogProducer(threading.Thread):
     q: queue.Queue
@@ -121,20 +122,18 @@ class BlocklogProducer(threading.Thread):
             # blocklog_from_fork_hash(newtip)
             pass
 
-        self.last_block_num = ekg_response.block_num
-        self.last_slot_num = ekg_response.slot_num
-
         # Now, For each id in blocks we want to create a
         # Blocklog which is a list of all the relevant entries of the logfile
         # That Blocklog is then pushed into the Queue, for the consumer to process
         for blocklog in _blocklogs:
-            print(f"Enqueue: {blocklog}")
+            #print(f"Enqueue: {blocklog}")
             print()
-            # msg = blocklog.to_message()
             self.to_cli_message(blocklog)
             print()
-
             self.q.put(blocklog)
+
+        self.last_block_num = ekg_response.block_num
+        self.last_slot_num = ekg_response.slot_num
 
         # self.all_blocklogs.update([(b.block_hash, b) for b in _blocklogs])
         # print(self.all_blocklogs)
@@ -194,18 +193,18 @@ class BlocklogProducer(threading.Thread):
         delay.... 0.192301717 sec
         ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
         """
-
+        slot_num_delta = blocklog.slot_num - self.last_slot_num
         # ? blockSlot-slotHeightPrev -> Delta between this slot and the last one that had a block?
         msg = (
             f"Block:.... {blocklog.block_num} ({blocklog.block_hash_short})\n"
-            f"Slot:..... {blocklog.slot_num} (?)\n"
+            f"Slot:..... {blocklog.slot_num} ({slot_num_delta}s)\n"
             f".......... {blocklog.slot_time}\n" # Assuming this is the slot_time
             f"Header ... {blocklog.first_trace_header.at} ({blocklog.header_delta}) from {blocklog.header_remote_addr}:{blocklog.header_remote_port}\n"
             f"RequestX.. {blocklog.fetch_request_completed_block.at} ({blocklog.block_request_delta})\n"
             f"Block..... {blocklog.first_completed_block.at} ({blocklog.block_response_delta}) from {blocklog.block_remote_addr}:{blocklog.block_remote_port}\n"
             f"Adopted... {blocklog.block_adopt} ({blocklog.block_adopt_delta})\n"
             f"Size...... {blocklog.block_size} bytes\n"
-            f"delay.....{blocklog.block_delay} sec\n"
+            f"Delay..... {blocklog.block_delay} sec\n"
         )
         print(msg)
 
@@ -227,8 +226,8 @@ class BlocklogConsumer(threading.Thread):
         while True:
             # The call to get() blocks until there is something in the queue
             blocklog: Blocklog = self.q.get()
-            # print(f"Fetchin {blocklog} : {self.q.qsize()} items left ")
-            # to be coded
+            print(f"Fetchin {blocklog} : {self.q.qsize()} items left ")
+
             # If finished working, the queue needs to be told about that
             self.q.task_done()
 
