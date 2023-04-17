@@ -33,6 +33,13 @@ def on_connect_fail_callback(client, userdata):
      print(client)
      print(userdata)
 
+def on_disconnect_callback(client, userdata, reasonCode, properties):
+    """Look into reasonCode for reason of disconnection
+    """
+    print("on_disconnect_callback")
+    print(reasonCode)
+
+
 def on_publish_callback(client, userdata, mid):
     print("on_publish_callback ")
     print(client)
@@ -49,6 +56,7 @@ def main():
     mqtt_client.on_connect_fail = on_connect_fail_callback
     mqtt_client.on_connect = on_connect_callback
     mqtt_client.on_publish = on_publish_callback
+    mqtt_client.on_disconnect = on_disconnect_callback
     mqtt_client.tls_set(
         ca_certs=CA,
         certfile=CERT,
@@ -57,7 +65,6 @@ def main():
     print(MQTT_HOST)
     # import pudb; pu.db
     mqtt_client.connect(MQTT_HOST, port=8883)
-
 
     # mqtt_client.loop_start()
     while True:

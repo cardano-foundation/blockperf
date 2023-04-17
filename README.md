@@ -1,5 +1,6 @@
 # Cardano blockPerf in python
 
+
 ## Installation
 
 * You will need an updated pip, or else it will refuse to install
@@ -10,3 +11,6 @@ ERROR: File "setup.py" not found. Directory cannot be installed in editable mode
 (A "pyproject.toml" file was found, but editable mode currently requires a setup.py based build.)
 ```
 
+## Configuration
+
+Get your own IP: `curl -sf https://ipinfo.io/ip/`

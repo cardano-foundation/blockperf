@@ -350,8 +350,19 @@ class Blocklog:
             return ""
         return self.first_completed_block.remote_port
 
-    def to_message(self) -> str:
-        """first_trace_header
+    def block_local_address(self) -> str:
+        if not self.first_completed_block:
+            return ""
+        return self.first_completed_block.local_addr
+
+    def block_local_port(self) -> str:
+        if not self.first_completed_block:
+            return ""
+        return self.first_completed_block.local_port
+
+    def __to_message(self) -> str:
+        """ Obsolete !!
+        first_trace_header
 
         * headerRemoteAddr  fill in from peer that first send TraceHeader
         * headerRemotePort  fill in from peer that first send TraceHeader
@@ -410,7 +421,7 @@ class Blocklog:
         return json.dumps(message, default=str)
 
     @classmethod
-    def read_logfiles(cls, log_dir: str) -> list:
+    def read_all_logfiles(cls, log_dir: str) -> list:
         """Reads all logfiles from"""
         from timeit import default_timer as timer
 
@@ -430,8 +441,11 @@ class Blocklog:
     def blocklogs_from_block_nums(
         cls: "Blocklog", block_nums: list, log_dir: str
     ) -> None:
-        """Receives a list of block_num's and yields a Blocklog Instance for each."""
-        loglines = Blocklog.read_logfiles(log_dir)
+        """Receives a list of block_num's and returns a list of Blocklogs for given block_nums
+
+        """
+        # Read all logfiles into a giant list of lines
+        loglines = Blocklog.read_all_logfiles(log_dir)
 
         def _find_hash_by_num(block_num: str) -> str:
             for line in reversed(loglines):
@@ -447,7 +461,7 @@ class Blocklog:
 
         def _find_lines_by_hash(hash: str) -> list:
             lines = []
-            #lines = list(filter(lambda x: hash in x, loglines))
+            # lines = list(filter(lambda x: hash in x, loglines))
             for line in loglines:
                 if hash in line:
                     lines.append(line)
@@ -460,8 +474,9 @@ class Blocklog:
 
         blocklogs = []
         for block_num in block_nums:
-            #print(f"Find blocklogs for {block_num}")
+            # Find the hash for given block_num, by searching for ChainSyncClientEvent.TraceDownloadedHeader event
             hash = _find_hash_by_num(str(block_num))
+            # Find all lines that have that hash
             lines = [
                 BlocklogLine(json.loads(line)) for line in _find_lines_by_hash(hash)
             ]

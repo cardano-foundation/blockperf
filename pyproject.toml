@@ -104,7 +104,8 @@ classifiers = [  # Optional
 # https://packaging.python.org/discussions/install-requires-vs-requirements/
 dependencies = [ # Optional
   "click",
-  "paho-mqtt==1.6.1"
+  "paho-mqtt==1.6.1",
+  "cryptography"
 ]
 
 # List additional groups of dependencies here (e.g. development
