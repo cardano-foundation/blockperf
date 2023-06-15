@@ -11,7 +11,6 @@ import threading
 import time
 import traceback
 import urllib
-from time import sleep
 from configparser import ConfigParser
 from dataclasses import InitVar, dataclass, field
 from pathlib import Path
@@ -58,7 +57,6 @@ class BlocklogProducer(threading.Thread):
     last_block_num: int = 0
     last_fork_height: int = 0
     last_slot_num: int = 0
-    count: int = 0
     all_blocklogs: list = dict()
 
     def __init__(self, queue, ekg_url: str, log_dir: str, network_magic: int):
@@ -72,43 +70,56 @@ class BlocklogProducer(threading.Thread):
         """Runs the Producer. Will get called from the Thread once its ready.
         If run() finishes the thread will finish.
         """
-        logging.debug("Starting Producer run")
+        logging.debug(f"Starting Producer, {self.ekg_url} ")
         while True:
+            EKG_RETRY_INTERVAL = 1  # seconds before trying ekg again, config?
             try:
                 self._run()
+                time.sleep(EKG_RETRY_INTERVAL)
             except EKGError:
-                time.sleep(0.5)
+                time.sleep(EKG_RETRY_INTERVAL)
             except Exception as e:
-                print(f"Error: {e}")
-                print(traceback.format_exc())
-                time.sleep(1)
+                logging.exception(e)
+                time.sleep(EKG_RETRY_INTERVAL)
 
     def _run(self) -> None:
         # Call ekg to get current slot_num, block_num and fork_num
         ekg_response = self.call_ekg()
+        logging.debug(ekg_response)
         assert ekg_response.slot_num > 0, "EKG did not report a slot_num"
         assert ekg_response.block_num > 0, "EKG did not report a block_num"
 
-        self.count += 1
-        # print(f"Run: {self.count} - last_block_num: {self.last_block_num}")
-        if self.count == 1:  # If its the first round, set last_* values and continue
+        # The idea is noticing a diff between the currently announced
+        # block_num/slot_num from ekg and the one that was seen before.
+        # So in order to detect that difference there needs to be a preceding
+        # value. If its the first round, there is none: So store and go to next.
+        if not self.last_block_num and not self.last_slot_num:
             self.last_slot_num = ekg_response.slot_num
             self.last_block_num = ekg_response.block_num
             # last_fork_height = fork_height
             return
 
-        # Produces a list of block_nums, we want to check the logs for
-        block_nums = self.calculate_block_nums_from_ekg(ekg_response.block_num)
-        if not block_nums:  # If no change in block_num found, we are not interested?
+        # Produces a list of block_numbers, we want to check the logs for
+        # e.g.: [45223, 45224], where these two are the block_nums th
+        block_nums_to_report = self.calculate_block_nums_from_ekg(
+            ekg_response.block_num
+        )
+        # If no change in block_nums_to_report is reported by ekg, start over
+        if not block_nums_to_report:
             assert (
                 ekg_response.forks != 0
             ), "No block_nums found; but forks are reported?"
+
             return
+        logging.debug(f"Total block_nums received from ekg {len(block_nums_to_report)}")
 
         # Produces a list of blocklogs we want to report (based upon the block_nums from before)
         blocklogs_to_report = Blocklog.blocklogs_from_block_nums(
-            block_nums, self.log_dir
+            block_nums_to_report, self.log_dir
         )
+        # blocklogs_to_report is a list of Blocklogs that each represent hold
+        # the data to be reported for one block.
+        logging.debug("")
 
         # Handling of forks ... is not implemted yet
         if ekg_response.forks > 0:
@@ -123,6 +134,9 @@ class BlocklogProducer(threading.Thread):
             # blocklog_from_fork_hash(newtip)
             pass
 
+        if not blocklogs_to_report:
+            logging.debug(f"No blocklogs to report found")
+
         for blocklog in blocklogs_to_report:
             print()
             self.to_cli_message(blocklog)
@@ -133,7 +147,7 @@ class BlocklogProducer(threading.Thread):
         self.last_slot_num = ekg_response.slot_num
 
         # self.all_blocklogs.update([(b.block_hash, b) for b in blocklogs_to_report])
-        # print(self.all_blocklogs)
+        # Just wait a second
         time.sleep(1)
 
     def calculate_block_nums_from_ekg(self, current_block_num) -> list:
@@ -282,7 +296,7 @@ class BlocklogConsumer(threading.Thread):
         # i decided to ensure the connection is established this way
         while not self.mqtt_client.is_connected:
             logging.debug("Waiting for mqtt connection ... ")
-            sleep(1)  # Configurable value?
+            time.sleep(1)  # Configurable value?
 
         from pprint import pprint
         from io import StringIO
