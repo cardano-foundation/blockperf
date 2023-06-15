@@ -177,7 +177,12 @@ class Blocklog:
         # Ensure lines are ordered by 'at'
         blocklog_lines.sort(key=lambda x: x.at)
         self._lines = blocklog_lines  # TODO: Remove !?
-        _trace_headers, _fetch_requests, _completed_blocks, _addstocurrentchain = [], [], [], []
+        _trace_headers, _fetch_requests, _completed_blocks, _addstocurrentchain = (
+            [],
+            [],
+            [],
+            [],
+        )
         line: BlocklogLine
         for line in blocklog_lines:
             if line.kind == LogKind.TRACE_DOWNLOADED_HEADER.name:
@@ -193,20 +198,21 @@ class Blocklog:
                 self.is_forkswitch = True
                 self.first_switch_to_fork = line
 
-
         self.first_trace_header = _trace_headers[0] if _trace_headers else None
         self.first_completed_block = _completed_blocks[0] if _completed_blocks else None
 
         # Some assumptions
         # It should never happen that AddedToChain and SwitchedToFork are present both True or both false
-        #if self.is_addtochain or self.is_forkswitch:
+        # if self.is_addtochain or self.is_forkswitch:
         #    msg = f"Blocklog for {self.block_hash_short} has AddedToCurrentChain and SwitchedToAFork!"
         #    print(msg)
-        #if not self.is_addtochain and not self.is_forkswitch:
+        # if not self.is_addtochain and not self.is_forkswitch:
         #    msg = f"Blocklog for {self.block_hash_short} has neither AddedToCurrentChain or SwitchedToAFork!"
         #    print(msg)
 
-        self.first_add_to_chain = _addstocurrentchain[0] if _addstocurrentchain else None
+        self.first_add_to_chain = (
+            _addstocurrentchain[0] if _addstocurrentchain else None
+        )
 
         # Find the FetchRequest for the first CompletedBlock by comparing remote_addr and _port
         _fetch_request = list(
@@ -220,22 +226,22 @@ class Blocklog:
         self.fetch_request_completed_block = _fetch_request.pop()
 
         # Find the TraceHeader for previously found FetchRequest (the one for the CompletedBlock)
-        #_trace_header = list(
+        # _trace_header = list(
         #    filter(
         #        lambda x: x.remote_addr == self.fetch_request_completed_block.remote_addr
         #        and x.remote_port == self.fetch_request_completed_block.remote_port,
         #        _trace_headers
         #    )
-        #)
-        #assert _trace_header, f"No TraceHeader found for {self.fetch_request_completed_block}"
-        #trace_header_completed_block = _trace_header.pop()
+        # )
+        # assert _trace_header, f"No TraceHeader found for {self.fetch_request_completed_block}"
+        # trace_header_completed_block = _trace_header.pop()
 
     def __str__(self) -> str:
         len_lines = len(self._lines)
-        #len_headers = len(_trace_headers)
-        #len_fetch_requests = len(_fetch_requests)
-        #len_completed_blocks = len(_completed_blocks)
-        #return f"Blocklog(lines={len_lines}, headers_received={len_headers}, fetch_requests={len_fetch_requests}, completed_blocks={len_completed_blocks})"
+        # len_headers = len(_trace_headers)
+        # len_fetch_requests = len(_fetch_requests)
+        # len_completed_blocks = len(_completed_blocks)
+        # return f"Blocklog(lines={len_lines}, headers_received={len_headers}, fetch_requests={len_fetch_requests}, completed_blocks={len_completed_blocks})"
         return f"Blocklog(hash={self.block_hash_short}, lines={len_lines}, remote={self.block_remote_addr}:{self.block_remote_port}, header_delta={self.header_delta})"
 
     @property
@@ -283,11 +289,11 @@ class Blocklog:
     @property
     def slot_time(self) -> datetime:
         _network_start = network_starttime.get("preview")
-        #print(f"_network_start {_network_start} self.slot_num {self.slot_num}")
+        # print(f"_network_start {_network_start} self.slot_num {self.slot_num}")
         _slot_time = _network_start + self.slot_num
-        #print(f"_slot_time {_slot_time}  # unixtimestamp")
+        # print(f"_slot_time {_slot_time}  # unixtimestamp")
         slot_time = datetime.fromtimestamp(_slot_time, tz=timezone.utc)
-        #print(f"slot_time {slot_time} # real datetime ")
+        # print(f"slot_time {slot_time} # real datetime ")
         return slot_time
 
     @property
@@ -361,7 +367,7 @@ class Blocklog:
         return self.first_completed_block.local_port
 
     def __to_message(self) -> str:
-        """ Obsolete !!
+        """Obsolete !!
         first_trace_header
 
         * headerRemoteAddr  fill in from peer that first send TraceHeader
@@ -396,27 +402,27 @@ class Blocklog:
         """
         print()
         message = {
-                "magic": "XXX",
-                "bpVersion": blockperf_version,
-                "blockNo": self.block_num,
-                "slotNo": self.slot_num,
-                "blockHash": self.block_hash,
-                "blockSize": self.size,
-                "headerRemoteAddr": self.header_remote_addr,
-                "headerRemotePort": self.header_remote_port,
-                "headerDelta": self.header_delta,
-                "blockReqDelta": self.block_request_delta,
-                "blockRspDelta": self.block_response_delta,
-                "blockAdoptDelta": self.block_adopt_delta,
-                "blockRemoteAddress": self.block_remote_addr,
-                "blockRemotePort": self.block_remote_port,
-                "blockLocalAddress": "",  # Taken from blockperf config
-                "blockLocalPort": "",  # Taken from blockperf config
-                "blockG": self.block_g,
-            }
+            "magic": "XXX",
+            "bpVersion": blockperf_version,
+            "blockNo": self.block_num,
+            "slotNo": self.slot_num,
+            "blockHash": self.block_hash,
+            "blockSize": self.size,
+            "headerRemoteAddr": self.header_remote_addr,
+            "headerRemotePort": self.header_remote_port,
+            "headerDelta": self.header_delta,
+            "blockReqDelta": self.block_request_delta,
+            "blockRspDelta": self.block_response_delta,
+            "blockAdoptDelta": self.block_adopt_delta,
+            "blockRemoteAddress": self.block_remote_addr,
+            "blockRemotePort": self.block_remote_port,
+            "blockLocalAddress": "",  # Taken from blockperf config
+            "blockLocalPort": "",  # Taken from blockperf config
+            "blockG": self.block_g,
+        }
 
-        #from pprint import pprint
-        #pprint(message)
+        # from pprint import pprint
+        # pprint(message)
 
         return json.dumps(message, default=str)
 
@@ -441,19 +447,20 @@ class Blocklog:
     def blocklogs_from_block_nums(
         cls: "Blocklog", block_nums: list, log_dir: str
     ) -> None:
-        """Receives a list of block_num's and returns a list of Blocklogs for given block_nums
-
-        """
+        """Receives a list of block_num's and returns a list of Blocklogs for given block_nums"""
         # Read all logfiles into a giant list of lines
         loglines = Blocklog.read_all_logfiles(log_dir)
 
         def _find_hash_by_num(block_num: str) -> str:
             for line in reversed(loglines):
                 # Find line that is a TraceHeader and has given block_num in it to determine block_hash
-                if block_num in line and "ChainSyncClientEvent.TraceDownloadedHeader" in line:
+                if (
+                    block_num in line
+                    and "ChainSyncClientEvent.TraceDownloadedHeader" in line
+                ):
                     line = dict(json.loads(line))
                     hash = line.get("data").get("block")
-                    #print(f"Found {hash}")
+                    # print(f"Found {hash}")
                     return hash
 
         def _has_kind(line):

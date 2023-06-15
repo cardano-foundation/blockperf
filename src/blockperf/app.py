@@ -25,11 +25,14 @@ import paho.mqtt.client as mqtt
 from blockperf import __version__ as blockperf_version
 from blockperf.blocklog import Blocklog
 from blockperf.exceptions import EKGError
+from blockperf.config import AppConfig
+
 
 logging.basicConfig(level=logging.DEBUG, format="(%(threadName)-9s) %(message)s")
 
 
 output = Path("output.json")
+
 
 @dataclass
 class EkgResponse:
@@ -63,16 +66,18 @@ class BlocklogProducer(threading.Thread):
         self.q = queue
         self.ekg_url = ekg_url
         self.log_dir = log_dir
+        logging.debug("Producer initialized")
 
     def run(self):
         """Runs the Producer. Will get called from the Thread once its ready.
         If run() finishes the thread will finish.
         """
+        logging.debug("Starting Producer run")
         while True:
             try:
                 self._run()
             except EKGError:
-                time.sleep(.5)
+                time.sleep(0.5)
             except Exception as e:
                 print(f"Error: {e}")
                 print(traceback.format_exc())
@@ -94,14 +99,16 @@ class BlocklogProducer(threading.Thread):
 
         # Produces a list of block_nums, we want to check the logs for
         block_nums = self.calculate_block_nums_from_ekg(ekg_response.block_num)
-        if not block_nums: # If no change in block_num found, we are not interested?
+        if not block_nums:  # If no change in block_num found, we are not interested?
             assert (
                 ekg_response.forks != 0
             ), "No block_nums found; but forks are reported?"
             return
 
         # Produces a list of blocklogs we want to report (based upon the block_nums from before)
-        blocklogs_to_report = Blocklog.blocklogs_from_block_nums(block_nums, self.log_dir)
+        blocklogs_to_report = Blocklog.blocklogs_from_block_nums(
+            block_nums, self.log_dir
+        )
 
         # Handling of forks ... is not implemted yet
         if ekg_response.forks > 0:
@@ -115,8 +122,6 @@ class BlocklogProducer(threading.Thread):
             #
             # blocklog_from_fork_hash(newtip)
             pass
-
-
 
         for blocklog in blocklogs_to_report:
             print()
@@ -159,11 +164,15 @@ class BlocklogProducer(threading.Thread):
             )
             response = urlopen(req)
             if response.status != 200:
-                raise EKGError(f"Invalid HTTP response received {response}")
+                msg = f"Invalid HTTP response received {response}"
+                logging.warning(msg)
+                raise EKGError(msg)
             # Happy path ...
             return EkgResponse(json.loads(response.read()))
         except URLError as _e:
-            raise EKGError(f"URLError {_e.reason}")
+            msg = f"URLError {_e.reason}"
+            logging.warning(msg)
+            raise EKGError(msg)
         except ConnectionResetError:
             raise EKGError("Could not open connection")
 
@@ -187,7 +196,7 @@ class BlocklogProducer(threading.Thread):
         msg = (
             f"Block:.... {blocklog.block_num} ({blocklog.block_hash_short})\n"
             f"Slot:..... {blocklog.slot_num} ({slot_num_delta}s)\n"
-            f".......... {blocklog.slot_time}\n" # Assuming this is the slot_time
+            f".......... {blocklog.slot_time}\n"  # Assuming this is the slot_time
             f"Header ... {blocklog.first_trace_header.at} ({blocklog.header_delta}) from {blocklog.header_remote_addr}:{blocklog.header_remote_port}\n"
             f"RequestX.. {blocklog.fetch_request_completed_block.at} ({blocklog.block_request_delta})\n"
             f"Block..... {blocklog.first_completed_block.at} ({blocklog.block_response_delta}) from {blocklog.block_remote_addr}:{blocklog.block_remote_port}\n"
@@ -204,29 +213,21 @@ class BlocklogConsumer(threading.Thread):
     """
 
     q: queue.Queue
-    _mqtt_client: mqtt.Client = None
+    _mqtt_client: mqtt.Client
     messages_sent: list = []
     app: "App"
 
     def __init__(self, queue, client_cert, client_key, app):
         super(BlocklogConsumer, self).__init__(daemon=True)
-        print("BlocklogConsumer::__init__")
         self.name = "consumer"
         self.app = app
         self.q = queue
-        # Every new client will start clean unless client_id is specified
-        self._mqtt_client = mqtt.Client(protocol=mqtt.MQTTv5)
-        self._mqtt_client.on_connect = self.on_connect_callback
-        self._mqtt_client.on_disconnect = self.on_disconnect_callback
-        self._mqtt_client.on_publish = self.on_publish_callback
-        self._mqtt_client.tls_set(
-            ca_certs="/home/msch/src/cf/blockperf.py/tmp/AmazonRootCA1.pem",
-            certfile=client_cert,
-            keyfile=client_key,
-        )
+        self.client_cert = client_cert
+        self.client_key = client_key
+        logging.debug("Consumer initialized")
 
     def build_payload_from(self, blocklog: Blocklog) -> str:
-        """ """
+        """Converts a given Blocklog into a json payload for sending to mqtt broker"""
         message = {
             "magic": self.app.network_magic,
             "bpVersion": blockperf_version,
@@ -242,59 +243,82 @@ class BlocklogConsumer(threading.Thread):
             "blockAdoptDelta": blocklog.block_adopt_delta,
             "blockRemoteAddress": blocklog.block_remote_addr,
             "blockRemotePort": blocklog.block_remote_port,
-            #"blockLocalAddress": blocklog.block_local_address,
-            #"blockLocalPort": blocklog.block_local_port,
+            # "blockLocalAddress": blocklog.block_local_address,
+            # "blockLocalPort": blocklog.block_local_port,
             "blockG": blocklog.block_g,
         }
         return json.dumps(message, default=str)
 
     @property
     def mqtt_client(self) -> mqtt.Client:
+        # Returns the mqtt client, or creates one if there is none
+        if not hasattr(self, "_mqtt_client"):
+            logging.info("(Re)Creating new mqtt client")
+            # Every new client will start clean unless client_id is specified
+            self._mqtt_client = mqtt.Client(protocol=mqtt.MQTTv5)
+            self._mqtt_client.on_connect = self.on_connect_callback
+            self._mqtt_client.on_disconnect = self.on_disconnect_callback
+            self._mqtt_client.on_publish = self.on_publish_callback
+
+            # tls_set has an argument ca_certs. I used to provide a file
+            # whith one of the certificates from https://www.amazontrust.com/repository/
+            # Not sure if i would actually need that?
+            self._mqtt_client.tls_set(
+                # ca_certs="/home/msch/src/cf/blockperf.py/tmp/AmazonRootCA1.pem",
+                certfile=self.client_cert,
+                keyfile=self.client_key,
+            )
         return self._mqtt_client
 
     def run(self):
-        """ """
+        """Connects to the mqtt broker and runs the consumer forever."""
         self.mqtt_client.connect(
             "a12j2zhynbsgdv-ats.iot.eu-central-1.amazonaws.com", port=8883
         )
-        self.mqtt_client.loop_start()  # Start thread for pahomqtt to process messages
+        self.mqtt_client.loop_start()  # Starts thread for pahomqtt to process messages
 
         # Sometimes the connect took a moment to settle. To not have
         # the consumer accept messages (and not be able to publish)
         # i decided to ensure the connection is established this way
         while not self.mqtt_client.is_connected:
-            print("Waiting for mqtt connection")
-            sleep(0.5)
+            logging.debug("Waiting for mqtt connection ... ")
+            sleep(1)  # Configurable value?
 
         from pprint import pprint
         from io import StringIO
-
 
         while True:
             unpublished_messages = list(
                 filter(lambda msg: not msg.is_published(), self.messages_sent)
             )
             if unpublished_messages:
-                print("Some messages have not yet been published (ack'ed from broker)")
+                logging.warning(
+                    "Some messages have not yet been published (ack'ed from broker)"
+                )
                 # Do we really want to block here for the messages to
                 for m in unpublished_messages:
-                    print(f"Blocking on message {m.mid}")
+                    logging.warning(f"Blocking on message {m.mid}")
                     m.wait_for_publish(10)
 
             # The call to get() blocks until there is something in the queue
-            print("Waiting for next during q.get() ")
+            logging.debug("Waiting for next item in queue ... ")
             blocklog: Blocklog = self.q.get()
-            print(f"Fetching {blocklog} : {self.q.qsize()} items left ")
-            # payload = json.dumps({"message": "Foobar"})
+            logging.debug(f"Received {blocklog}")
+            if self.q.qsize() > 0:
+                logging.debug(f"{self.q.qsize()} left in queue")
+
+            #
             payload = self.build_payload_from(blocklog)
             topic = self.get_topic()
-            pprint(payload)
+
+            # publish does not guarantee delivery but returns the
             message_info = self.mqtt_client.publish(topic=topic, payload=payload)
-            print(f"Published message {message_info.mid} to {topic}")
+            logging.debug(f"Published {message_info.mid} to {topic}")
             self.messages_sent.append(message_info)
 
     def get_topic(self) -> str:
-        topic = f"develop/{self.app.operator}/{self.app.relay_public_ip}"
+        # topic = f"develop/{self.app.operator}/{self.app.relay_public_ip}"
+        topic = f"self/{self.app.operator}/{self.app.relay_public_ip}"
         return topic
 
     def on_connect_callback(self, client, userdata, flags, reasonCode, properties):
@@ -319,17 +343,18 @@ class BlocklogConsumer(threading.Thread):
 class App:
     q: queue.Queue
     # config: ConfigParser
-    node_config: dict = None
+    node_config: dict
     network_magic: int = 0
     lockfile_path: str = "/tmp/blockperf.lock"
-    relay_public_ip: str = None
-    operator: str = None
+    relay_public_ip: str
+    operator: str
 
     def __init__(self, config: str) -> None:
         _config = ConfigParser()
         _config.read(config)
         self._read_config(_config)
         self.q = queue.Queue(maxsize=10)
+        logging.debug("App init success")
 
     def check_already_running(self) -> bool:
         """Checks if an instance is already running, exitst if it does!
@@ -360,6 +385,7 @@ class App:
         )
         node_config_folder = node_config_path.parent
         if not node_config_path.exists():
+            logging.debug("Read config successfully")
             sys.exit(f"Node config not found {node_config_path}!")
 
         self.node_config = json.loads(node_config_path.read_text())
@@ -400,7 +426,9 @@ class App:
         # Try to check whether CN of cert matches given operator
         cert = x509.load_pem_x509_certificate(Path(self.client_cert).read_bytes())
         name_attribute = cert.subject.get_attributes_for_oid(NameOID.COMMON_NAME).pop()
-        assert name_attribute.value == self.operator, "Given operator does not match CN in certificate"
+        assert (
+            name_attribute.value == self.operator
+        ), "Given operator does not match CN in certificate"
 
     def run(self):
         self.check_already_running()

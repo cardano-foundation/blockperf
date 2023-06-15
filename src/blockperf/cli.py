@@ -4,7 +4,7 @@ from pathlib import Path
 import click
 
 from blockperf.app import App
-
+from blockperf.config import AppConfig
 
 # Either config setting work out of config.json
 
