@@ -6,3 +6,4 @@
 ekg.json
 mqtt_message.json
 tmp/
+blockperf.ini
