@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from blockperf import __version__ as blockperf_version
 from typing import Union
 
+# BLOCKLOGSDIR = "/home/msch/cardano/cnode/logs/blocklogs"
 BLOCKLOGSDIR = "/home/msch/src/cf/blockperf.py/blocklogs"
 
 
@@ -71,7 +72,13 @@ class BlocklogLine:
 
         if self.kind == LogKind.TRACE_DOWNLOADED_HEADER.name:
             self.block_hash = logline.get("data").get("block")
-            self.block_num = logline.get("data").get("blockNo")
+
+            b = logline.get("data").get("blockNo")
+            if "unBlockNo" in b:
+                self.block_num = b.get("unBlockNo")
+            else:
+                self.block_num = b
+
             self.slot_num = logline.get("data").get("slot", 0)
             self.remote_addr = logline.get("data").get("peer").get("remote").get("addr")
             self.remote_port = logline.get("data").get("peer").get("remote").get("port")
@@ -102,7 +109,6 @@ class BlocklogLine:
             pass
 
     def __str__(self):
-        # print(self._logline)
         if self.kind in (
             LogKind.TRACE_DOWNLOADED_HEADER.name,
             LogKind.SEND_FETCH_REQUEST.name,
@@ -112,8 +118,6 @@ class BlocklogLine:
             return f"BlocklogLine(slot_num={self.slot_num}, kind={self.kind}, at={self.at}, size={self.size}, peer={self.remote_addr}:{self.remote_port})"
         else:
             return f"BlocklogLine(slot_num={self.slot_num}, kind={self.kind}, at={self.at})"
-
-    # def __eq__(self, other):
 
     def _fetch_kind(self, kind: str) -> LogKind:
         """Returns the LogKind attribute of given kind string"""
@@ -420,72 +424,6 @@ class Blocklog:
             "blockLocalPort": "",  # Taken from blockperf config
             "blockG": self.block_g,
         }
-
         # from pprint import pprint
         # pprint(message)
-
         return json.dumps(message, default=str)
-
-    @classmethod
-    def read_all_logfiles(cls, log_dir: str) -> list:
-        """Reads all logfiles from"""
-        from timeit import default_timer as timer
-
-        start = timer()
-        logfiles = list(Path(log_dir).glob("node-*"))
-        logfiles.sort()
-        # pprint(logfiles)
-        log_lines = []
-        for logfile in logfiles[-3:]:
-            with logfile.open() as f:
-                log_lines.extend(f.readlines())
-        end = timer()
-        res = end - start  # time it took to run
-        return log_lines
-
-    @classmethod
-    def blocklogs_from_block_nums(
-        cls: "Blocklog", block_nums: list, log_dir: str
-    ) -> None:
-        """Receives a list of block_num's and returns a list of Blocklogs for given block_nums"""
-        # Read all logfiles into a giant list of lines
-        loglines = Blocklog.read_all_logfiles(log_dir)
-
-        def _find_hash_by_num(block_num: str) -> str:
-            for line in reversed(loglines):
-                # Find line that is a TraceHeader and has given block_num in it to determine block_hash
-                if (
-                    block_num in line
-                    and "ChainSyncClientEvent.TraceDownloadedHeader" in line
-                ):
-                    line = dict(json.loads(line))
-                    hash = line.get("data").get("block")
-                    # print(f"Found {hash}")
-                    return hash
-
-        def _has_kind(line):
-            pass
-
-        def _find_lines_by_hash(hash: str) -> list:
-            lines = []
-            # lines = list(filter(lambda x: hash in x, loglines))
-            for line in loglines:
-                if hash in line:
-                    lines.append(line)
-            # Debug output in file
-            filepath = Path(BLOCKLOGSDIR).joinpath(f"{hash[0:6]}.blocklog")
-            filepath.parent.mkdir(parents=True, exist_ok=True)
-            with filepath.open("w", encoding="utf-8") as f:
-                f.writelines(lines)
-            return lines
-
-        blocklogs = []
-        for block_num in block_nums:
-            # Find the hash for given block_num, by searching for ChainSyncClientEvent.TraceDownloadedHeader event
-            hash = _find_hash_by_num(str(block_num))
-            # Find all lines that have that hash
-            lines = [
-                BlocklogLine(json.loads(line)) for line in _find_lines_by_hash(hash)
-            ]
-            blocklogs.append(Blocklog(lines))
-        return blocklogs

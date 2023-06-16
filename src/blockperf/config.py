@@ -3,7 +3,7 @@ from configparser import ConfigParser
 import logging
 import sys
 import json
-from blockperf.exceptions import ConfigError
+from blockperf.errors import ConfigError
 from cryptography import x509
 from cryptography.x509.oid import NameOID
 
@@ -102,6 +102,18 @@ class AppConfig:
     @property
     def topic_base(self):
         return self._config.get("DEFAULT", "topic_base", fallback="develop")
+
+    @property
+    def mqtt_broker_url(self):
+        return self._config.get(
+            "DEFAULT",
+            "mqtt_broker_url",
+            fallback="a12j2zhynbsgdv-ats.iot.eu-central-1.amazonaws.com",
+        )
+
+    @property
+    def mqtt_broker_port(self):
+        return self._config.get("DEFAULT", "mqtt_broker_port", fallback=8883)
 
     # def _read_config(self, config: ConfigParser):
     #    """ """
