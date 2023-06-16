@@ -19,12 +19,12 @@ def main(verbose):
 
 @click.command("run", short_help="Run blockPerf")
 @click.argument(
-    "config", required=True, type=click.Path(resolve_path=True, exists=True)
+    "config_file_path", required=True, type=click.Path(resolve_path=True, exists=True)
 )
 # @pass_environment
-def cmd_run(config):
+def cmd_run(config_file_path):
     """Runs blockPerf"""
-    app = App(config)
+    app = App(AppConfig(config_file_path))
     app.run()
 
 

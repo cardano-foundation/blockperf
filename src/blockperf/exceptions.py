@@ -1,7 +1,6 @@
-
-class EKGError(Exception):
+class EkgError(Exception):
     pass
+
 
 class ConfigError(Exception):
     pass
-

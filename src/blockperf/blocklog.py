@@ -19,7 +19,7 @@ network_starttime = {
 
 
 class LogKind(Enum):
-    """The Kind of a logline."""
+    """Possible kinds of loglines."""
 
     TRACE_DOWNLOADED_HEADER = "TraceDownloadedHeader"
     SEND_FETCH_REQUEST = "SendFetchRequest"
@@ -71,7 +71,7 @@ class BlocklogLine:
 
         if self.kind == LogKind.TRACE_DOWNLOADED_HEADER.name:
             self.block_hash = logline.get("data").get("block")
-            self.block_num = logline.get("data").get("blockNo").get("unBlockNo")
+            self.block_num = logline.get("data").get("blockNo")
             self.slot_num = logline.get("data").get("slot", 0)
             self.remote_addr = logline.get("data").get("peer").get("remote").get("addr")
             self.remote_port = logline.get("data").get("peer").get("remote").get("port")
