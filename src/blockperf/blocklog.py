@@ -36,9 +36,9 @@ class BlocklogLine:
     Note: Many of the attributes are only set for specific kinds of loglines!
     """
 
-    logline: InitVar[dict]
+    logline: InitVar[str]
     kind: LogKind = field(init=False, default=LogKind.UNKNOWN)
-    at: datetime = field(init=False, default=None)
+    at: datetime = field(init=False)
     block_hash: str = field(init=False, default="")
     block_num: int = field(init=False, default=0)
     slot_num: int = field(init=False, default=0)
@@ -53,7 +53,7 @@ class BlocklogLine:
     chain_length_delta: int = field(init=False, default=0)
     env: str = field(init=False, default="")
 
-    def __post_init__(self, logline: dict):
+    def __post_init__(self, logline: str):
         """Initilize all class attributes by parsing the given logline.
         Assuming that at and data.kind fields will be there for all line types.
         All others are only dependant upon the lines' kind.
@@ -62,6 +62,7 @@ class BlocklogLine:
         However, that also means the defaults from above for the class attributes
         are not reliable ...
         """
+        logline = json.loads(logline)
         # self._logline = logline
 
         # Unfortunatly datetime.datetime.fromisoformat() can not actually handle
@@ -129,7 +130,7 @@ class BlocklogLine:
 
 @dataclass
 class Blocklog:
-    """
+    """A Blocklog represents all
     Config setting: MaxConcurrencyDeadline sets how many concurent blocks could be
         evaluated; Currently set to 4 so up to 8 simultanious fetch requests.
 

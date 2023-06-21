@@ -9,6 +9,7 @@ import threading
 import time
 import traceback
 import urllib
+from timeit import default_timer as timer
 from dataclasses import InitVar, dataclass, field
 from pathlib import Path
 from pprint import pprint
@@ -18,7 +19,7 @@ import paho.mqtt.client as mqtt
 from blockperf import __version__ as blockperf_version
 from blockperf.blocklog import Blocklog
 from blockperf.config import AppConfig
-from blockperf.producer import EkgProducer
+from blockperf.producer import EkgProducer, LogfilesProducer
 
 logging.basicConfig(level=logging.DEBUG, format="(%(threadName)-9s) %(message)s")
 
@@ -117,13 +118,17 @@ class BlocklogConsumer(threading.Thread):
                 logging.debug(f"{self.q.qsize()} left in queue")
             payload = self.build_payload_from(blocklog)
             topic = self.get_topic()
+            start_publish = timer()
             message_info = self.mqtt_client.publish(topic=topic, payload=payload)
             # wait_for_publish blocks until timeout for the message to be published
-            message_info.wait_for_publish(10)
-
-            logging.debug(
-                f"Published {blocklog.block_hash_short} with mid='{message_info.mid}' to {topic}"
+            message_info.wait_for_publish(5)
+            end_publish = timer()
+            publish_time = end_publish - start_publish
+            logging.info(
+                f"Published {blocklog.block_hash_short} with mid='{message_info.mid}' to {topic} in {publish_time}"
             )
+            if publish_time > 5.0:
+                logging.warning("Publish time > 5.0")
 
     def get_topic(self) -> str:
         return f"{self.app_config.topic_base}/{self.app_config.operator}/{self.app_config.relay_public_ip}"
@@ -137,7 +142,7 @@ class BlocklogConsumer(threading.Thread):
         else:
             self._mqtt_connected = True
 
-    def on_disconnect_callback(client, userdata, reasonCode, properties):
+    def on_disconnect_callback(self, client, userdata, reasonCode, properties):
         """Called when disconnected from broker
         See paho.mqtt.client.py on_disconnect()"""
         logging.error(f"Connection lost {reasonCode}")
@@ -162,11 +167,12 @@ class App:
         self.q = queue.Queue(maxsize=20)
         logging.debug("App init finished")
 
-    def _check_already_running(self) -> bool:
+    def _check_already_running(self) -> None:
         """Checks if an instance is already running, exitst if it does!
         Will not work on windows since fcntl is unavailable there!!
         """
-        lock_file_fp = open(self.app_config.lock_file, "a")
+        lock_file = self.app_config.lock_file
+        lock_file_fp = open(lock_file, "a")
         try:
             # Try to get exclusive lock on lockfile
             fcntl.lockf(lock_file_fp, fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -178,14 +184,16 @@ class App:
         except (IOError, BlockingIOError):
             # Could not acquire lock, maybe implement some --force/--ignore flag
             # that would delete and recreate the file?
-            sys.exit(f"Could not acquire exclusive lock on {self.lockfile_path}")
+            sys.exit(f"Could not acquire exclusive lock on {lock_file}")
 
     def run(self):
         self._check_already_running()
         # The producers produces "Blocklogs", which each represent
         # one block worth of performance data. So for any given block
         # seen on chain, a Blocklog will be put into the queue
-        producer = EkgProducer(queue=self.q, app_config=self.app_config)
+
+        # producer = EkgProducer(queue=self.q, app_config=self.app_config)
+        producer = LogfilesProducer(queue=self.q, app_config=self.app_config)
         producer.start()
 
         # The consumer takes Blocklogs from the queue and sends them to
