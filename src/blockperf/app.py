@@ -21,8 +21,7 @@ from blockperf import logger_name
 from blockperf.config import AppConfig
 from blockperf.tracing import BlockTrace, TraceEvent, TraceEventKind
 
-logging.basicConfig(level=logging.DEBUG, format="(%(threadName)-9s) %(message)s")
-logger = logging.getLogger(logger_name)
+LOG = logging.getLogger(logger_name)
 
 
 class App:
@@ -35,7 +34,7 @@ class App:
     def __init__(self, config: AppConfig) -> None:
         self.app_config = config
         self.q = queue.Queue(maxsize=20)
-        logger.debug("App init finished")
+        LOG.debug("App init finished")
 
     def _check_already_running(self) -> None:
         """Checks if an instance is already running, exitst if it does!
@@ -63,9 +62,11 @@ class App:
         # consumer = BlocklogConsumer(queue=self.q, app_config=self.app_config)
         consumer_thread = threading.Thread(target=self.consume_blocktrace, args=())
         consumer_thread.start()
+        logging.info("Consumer thread started")
 
         producer_thread = threading.Thread(target=self.produce_blocktraces, args=())
         producer_thread.start()
+        logging.info("Producer thread started")
 
         # Blocks main thread until all joined threads are finished
         producer_thread.join()
@@ -75,7 +76,7 @@ class App:
     def mqtt_client(self) -> mqtt.Client:
         # Returns the mqtt client, or creates one if there is none
         if not hasattr(self, "_mqtt_client"):
-            logger.info("(Re)Creating new mqtt client")
+            LOG.info("(Re)Creating new mqtt client")
             # Every new client will start clean unless client_id is specified
             self._mqtt_client = mqtt.Client(protocol=mqtt.MQTTv5)
             self._mqtt_client.on_connect = self.on_connect_callback
@@ -100,7 +101,7 @@ class App:
         """Called when the broker responds to our connection request.
         See paho.mqtt.client.py on_connect()"""
         if not reasonCode == 0:
-            logger.error("Connection error " + str(reasonCode))
+            LOG.error("Connection error " + str(reasonCode))
             self._mqtt_connected = False
         else:
             self._mqtt_connected = True
@@ -108,12 +109,12 @@ class App:
     def on_disconnect_callback(self, client, userdata, reasonCode, properties) -> None:
         """Called when disconnected from broker
         See paho.mqtt.client.py on_disconnect()"""
-        logger.error(f"Connection lost {reasonCode}")
+        LOG.error(f"Connection lost {reasonCode}")
 
     def on_publish_callback(self, client, userdata, mid) -> None:
         """Called when a message is actually received by the broker.
         See paho.mqtt.client.py on_publish()"""
-        logger.info(f"Message {mid} published")
+        LOG.info(f"Message {mid} published")
         # There should be a way to know which messages belongs to which
         # item in the queue and acknoledge that specifically
         # self.q.task_done()
@@ -127,7 +128,7 @@ class App:
             self.app_config.mqtt_broker_url,
             self.app_config.mqtt_broker_port,
         )
-        logger.debug(
+        LOG.debug(
             f"Connecting to {broker_url}:{broker_port}"
         )
         self.mqtt_client.connect(broker_url, broker_port)
@@ -137,34 +138,37 @@ class App:
         # the consumer accept messages (and not be able to publish)
         # i decided to ensure the connection is established this way
         while not self.mqtt_client.is_connected:
-            logger.debug("Waiting for mqtt connection ... ")
+            LOG.debug("Waiting for mqtt connection ... ")
             time.sleep(0.5)  # Block until connected
 
         while True:
-            logger.debug(
-                f"Waiting for next item in queue, Current size: {self.q.qsize()}"
-            )
-            # The call to get() blocks until there is something in the queue
-            blocktrace = self.q.get()
-            if self.q.qsize() > 0:
-                logger.debug(f"{self.q.qsize()} left in queue")
-            payload = blocktrace.as_payload_dict()
-            pprint(payload)
-            topic = self.get_topic()
-            start_publish = timer()
-            message_info = self.mqtt_client.publish(
-                topic=topic,
-                payload=json.dumps(payload, default=str)
-            )
-            # wait_for_publish blocks until timeout for the message to be published
-            message_info.wait_for_publish(5)
-            end_publish = timer()
-            publish_time = end_publish - start_publish
-            logger.info(
-                f"Published {blocktrace.block_hash_short} with mid='{message_info.mid}' to {topic} in {publish_time}"
-            )
-            if publish_time > 5.0:
-                logger.warning("Publish time > 5.0")
+            try:
+                LOG.debug(
+                    f"Waiting for next item in queue, Current size: {self.q.qsize()}"
+                )
+                # The call to get() blocks until there is something in the queue
+                blocktrace = self.q.get()
+                if self.q.qsize() > 0:
+                    LOG.debug(f"{self.q.qsize()} left in queue")
+                payload = blocktrace.as_payload_dict()
+                LOG.debug(payload)
+                topic = self.get_topic()
+                start_publish = timer()
+                message_info = self.mqtt_client.publish(
+                    topic=topic,
+                    payload=json.dumps(payload, default=str)
+                )
+                # wait_for_publish blocks until timeout for the message to be published
+                message_info.wait_for_publish(5)
+                end_publish = timer()
+                publish_time = end_publish - start_publish
+                LOG.info(
+                    f"Published {blocktrace.block_hash_short} with mid='{message_info.mid}' to {topic} in {publish_time}"
+                )
+                if publish_time > 5.0:
+                    LOG.warning("Publish time > 5.0")
+            except Exception as e:
+                logging.exception(e)
 
     def generate_log_events(self):
         """Generator that yields new lines from the logfile as they come in."""
@@ -177,7 +181,7 @@ class App:
         node_log_path = Path(self.app_config.node_logs_dir).joinpath("node.json")
         if not node_log_path.exists():
             sys.exit(f"{node_log_path} does not exist!")
-        logger.debug(f"Generating events from {node_log_path}")
+        LOG.debug(f"Generating events from {node_log_path}")
 
         # Open logfile and constantly read it,
         with open(node_log_path, "r") as node_log:
@@ -199,25 +203,27 @@ class App:
             TraceEventKind.SWITCHED_TO_A_FORK,
         )
         while True:
-            for event in self.generate_log_events():
-                logger.debug(event)
-                assert event.block_hash, f"Found a trace that has no hash {event}"
+            try:
+                for event in self.generate_log_events():
+                    # LOG.debug(event)
+                    assert event.block_hash, f"Found a trace that has no hash {event}"
+                    # Add event to list in identified by event.block_hash
+                    if not event.block_hash in self.trace_events:
+                        self.trace_events[event.block_hash] = list()
+                    self.trace_events[event.block_hash].append(event)
 
-                # Add event to list in identified by event.block_hash
-                if not event.block_hash in self.trace_events:
-                    self.trace_events[event.block_hash] = list()
-                self.trace_events[event.block_hash].append(event)
+                    # If the event is not finishing a block move on
+                    if not event.kind in finished_block_kinds:
+                        continue
 
-                # If the event is not finishing a block move on
-                if not event.kind in finished_block_kinds:
-                    continue
-
-                _h = event.block_hash[0:9]
-                logger.debug(f"Found {len(self.trace_events[event.block_hash])} events for {_h}")
-                logger.debug(f"Blocks tracked {len(self.trace_events.keys())}")
-                # Get all events for given hash and delete from list
-                events = self.trace_events.pop(event.block_hash)
-                bt = BlockTrace(events, self.app_config)
-                sys.stdout.write(bt.as_msg_string())
-                self.q.put(bt)
+                    _h = event.block_hash[0:9]
+                    LOG.debug(f"Found {len(self.trace_events[event.block_hash])} events for {_h}")
+                    LOG.debug(f"Blocks tracked {len(self.trace_events.keys())}")
+                    # Get all events for given hash and delete from list
+                    events = self.trace_events.pop(event.block_hash)
+                    bt = BlockTrace(events, self.app_config)
+                    sys.stdout.write(bt.as_msg_string())
+                    self.q.put(bt)
+            except Exception as e:
+                logging.exception(e)
 

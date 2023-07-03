@@ -9,8 +9,9 @@ from blockperf import logger_name
 from blockperf import __version__ as blockperf_version
 from blockperf.config import AppConfig
 
-logging.basicConfig(level=logging.DEBUG, format="(%(threadName)-9s) %(message)s")
-logger = logging.getLogger(logger_name)
+# logging.basicConfig(level=logging.DEBUG, format="(%(threadName)-9s) %(message)s")
+LOG = logging.getLogger(logger_name)
+
 
 # Unixtimestamps of the starttimes of different networks. Needed to determine
 # when a given slot is meant to exist in time.
@@ -88,7 +89,7 @@ class TraceEvent:
         self.at = datetime.strptime(event_data.get("at", None), "%Y-%m-%dT%H:%M:%S.%f%z")
         self.data = event_data.get("data", {})
         if not self.data:
-            logger.error(f"{self} has not data")
+            LOG.error(f"{self} has not data")
         self.env = event_data.get("env", "")
         # ns seems to always be a single entry list ...
         self.ns = event_data.get("ns", [""])[0]
@@ -106,7 +107,7 @@ class TraceEvent:
             _json_data = json.loads(logline)
             return cls(_json_data)
         except json.decoder.JSONDecodeError as e:
-            logger.error(f"Could not decode json from {logline} ")
+            LOG.error(f"Could not decode json from {logline} ")
             return None
 
     @property
@@ -127,7 +128,7 @@ class TraceEvent:
             block_hash = newtip.split("@")[0]
 
         if not block_hash:
-            logger.error(f"Could not determine block_hash for {self}")
+            LOG.error(f"Could not determine block_hash for {self}")
 
         return str(block_hash)
 
@@ -147,49 +148,49 @@ class TraceEvent:
     def delay(self) -> float:
         _delay = self.data.get("delay", 0.0)
         if not _delay:
-            logger.error(f"{self} has no delay {self.data}")
+            LOG.error(f"{self} has no delay {self.data}")
         return _delay
 
     @property
     def size(self) -> int:
         _size = self.data.get("size", 0)
         if not _size:
-            logger.error(f"{self} has no size {self.data}")
+            LOG.error(f"{self} has no size {self.data}")
         return _size
 
     @property
     def local_addr(self) -> str:
         _local_addr = self.data.get("peer", {}).get("local", {}).get("addr", "")
         if not _local_addr:
-            logger.error(f"{self} has no local_addr {self.data}")
+            LOG.error(f"{self} has no local_addr {self.data}")
         return _local_addr
 
     @property
     def local_port(self) -> str:
         _local_port = self.data.get("peer", {}).get("local", {}).get("port", "")
         if not _local_port:
-            logger.error(f"{self} has no local_port {self.data}")
+            LOG.error(f"{self} has no local_port {self.data}")
         return _local_port
 
     @property
     def remote_addr(self) -> str:
         _remote_addr = self.data.get("peer", {}).get("remote", {}).get("addr", "")
         if not _remote_addr:
-            logger.error(f"{self} has no remote_addr {self.data}")
+            LOG.error(f"{self} has no remote_addr {self.data}")
         return _remote_addr
 
     @property
     def remote_port(self) -> str:
         _remote_port = self.data.get("peer", {}).get("remote", {}).get("port", "")
         if not _remote_port:
-            logger.error(f"{self} has no remote_port {self.data}")
+            LOG.error(f"{self} has no remote_port {self.data}")
         return _remote_port
 
     @property
     def slot_num(self) -> int:
          _slot_num = self.data.get("slot", 0)
          if not _slot_num:
-             logger.error(f"{self} has no slot_num {_slot_num} {self.data}")
+             LOG.error(f"{self} has no slot_num {_slot_num} {self.data}")
          return _slot_num
 
     @property
@@ -204,28 +205,28 @@ class TraceEvent:
             assert "unBlockNo" in _blockNo, "blockNo is a dict but does not have unBlockNo"
             _blockNo = _blockNo.get("unBlockNo", 0)
         if not _blockNo:
-            logger.error(f"{self} has no block_num")
+            LOG.error(f"{self} has no block_num")
         return _blockNo
 
     @property
     def deltaq_g(self) -> str:
         _deltaq_g = self.data.get("deltaq", {}).get("G", "")
         if not _deltaq_g:
-            logger.error(f"{self} has no deltaq_g {self.data}")
+            LOG.error(f"{self} has no deltaq_g {self.data}")
         return _deltaq_g
 
     @property
     def chain_length_delta(self) -> int:
         _chain_length_delta = self.data.get("chainLengthDelta", 0)
         if not _chain_length_delta:
-            logger.error(f"{self} has no chain_length_delta {self.data}")
+            LOG.error(f"{self} has no chain_length_delta {self.data}")
         return _chain_length_delta
 
     @property
     def newtip(self):
         _newtip = self.data.get("newtip", "")
         if not _newtip:
-            logger.error(f"{self} has no newtip {self.data}")
+            LOG.error(f"{self} has no newtip {self.data}")
         else:
             _newtip = _newtip.split("@")[0]
         return _newtip
@@ -320,7 +321,7 @@ class BlockTrace:
                     self._fetch_request_completed_block = event
                     break
             else:
-                logger.error(f"{self} has not found a FetchRequest for {self.first_completed_block}")
+                LOG.error(f"{self} has not found a FetchRequest for {self.first_completed_block}")
         return self._fetch_request_completed_block
 
     @property
@@ -412,7 +413,7 @@ class BlockTrace:
                 TraceEventKind.SWITCHED_TO_A_FORK
             ):
                 return event
-        logger.error(f"{self.block_hash_short} has not been adopted!")
+        LOG.error(f"{self.block_hash_short} has not been adopted!")
         return None
 
     @property

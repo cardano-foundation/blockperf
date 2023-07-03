@@ -2,7 +2,7 @@
 
 ## Installation
 
-Clone repositoy into /opt/cardano/cnode/blockperf and run the install.sh script.
+* Clone repositoy into /opt/cardano/cnode/blockperf and run the install.sh script.
 
 ```
 cd /opt/cardano/cnode
@@ -15,34 +15,19 @@ cd blockperf
 
 This will create a virtual environment in `/opt/cardano/cnode/blockperf/venv`.
 
+* Create a configuration file
 
+In the contrib folder is a blockperf.ini example file. Use that file as base
+for your own configuration. E.g. copy that file to `/opt/cardano/cnode/blockperf/blockperf.ini`.
+In the file are some explanations for what each settings does.
 
+* Create the service
 
+In the contrib folder is a blockperf.service example file. Copy it over
+to the /etc/systemd/system folder and enable the service.
 
-
-
-
-```
-ERROR: File "setup.py" not found. Directory cannot be installed in editable mode: /home/msch/src/cf/blockperf.py
-(A "pyproject.toml" file was found, but editable mode currently requires a setup.py based build.)
-```
 
 ## Configuration
-
-Get your own IP: `curl -sf https://ipinfo.io/ip/`
-
-
-## Notes from install in the dc
-
-* Based on minimal ubuntu jammy 22.04
-
-```
-# for venv install
-apt install python3.10-venv
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-```
 
 ### Configure the node
 

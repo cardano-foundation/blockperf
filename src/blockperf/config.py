@@ -1,3 +1,7 @@
+"""App Configuration based on pythons stdlib configparser module.
+Why configparser? Because its simple. There is a blockperf.ini file in the
+contrib/ folder which has all options and a short explanation of what they do.
+"""
 from pathlib import Path
 from configparser import ConfigParser
 import logging
@@ -5,8 +9,6 @@ import sys
 import json
 #from cryptography import x509
 #from cryptography.x509.oid import NameOID
-
-logging.basicConfig(level=logging.DEBUG, format="(%(threadName)-9s) %(message)s")
 
 
 class ConfigError(Exception):

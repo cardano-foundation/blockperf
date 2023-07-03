@@ -42,3 +42,5 @@ eval $COMMAND || {
 source "${VIRTUALENV}/bin/activate"
 
 
+pip install .
+

@@ -3,6 +3,7 @@
 *venv
 *.vscode
 *logs
+*build
 ekg.json
 mqtt_message.json
 tmp/
