@@ -1,0 +1,13 @@
+[Unit]
+Description=Blockperf.py
+
+
+[Service]
+Type=simple
+Restart=always
+RestartSec=20
+User=ubuntu
+ExecStart=/opt/cardano/cnode/blockperf/venv/bin/blockperf run /opt/cardano/cnode/blockperf/blockperf.ini
+KillSignal=SIGINT
+SyslogIdentifier=blockperf
+TimeoutStopSec=5

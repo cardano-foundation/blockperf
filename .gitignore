@@ -1,6 +1,6 @@
 *.egg-info
 *.pyc
-*.venv
+*venv
 *.vscode
 *logs
 ekg.json

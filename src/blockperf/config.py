@@ -3,8 +3,8 @@ from configparser import ConfigParser
 import logging
 import sys
 import json
-from cryptography import x509
-from cryptography.x509.oid import NameOID
+#from cryptography import x509
+#from cryptography.x509.oid import NameOID
 
 logging.basicConfig(level=logging.DEBUG, format="(%(threadName)-9s) %(message)s")
 

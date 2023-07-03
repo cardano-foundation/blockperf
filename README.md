@@ -2,8 +2,25 @@
 
 ## Installation
 
-* You will need an updated pip, or else it will refuse to install
-    as editable install.
+Clone repositoy into /opt/cardano/cnode/blockperf and run the install.sh script.
+
+```
+cd /opt/cardano/cnode
+git clone git@github.com:cardano-foundation/blockperf.git
+
+# cd into that directory and run the install script
+cd blockperf
+./install.sh
+```
+
+This will create a virtual environment in `/opt/cardano/cnode/blockperf/venv`.
+
+
+
+
+
+
+
 
 ```
 ERROR: File "setup.py" not found. Directory cannot be installed in editable mode: /home/msch/src/cf/blockperf.py
