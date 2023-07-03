@@ -8,13 +8,15 @@ import logging
 import sys
 from urllib.error import URLError
 from urllib.request import Request, urlopen
+
+from blockperf import logger_name
 from blockperf.config import AppConfig
 from blockperf.errors import EkgError
-from blockperf.blocklog import Blocklog, BlocklogLine
-from blockperf.blocktrace import BlockTrace, TraceEvent, TraceKind
+#from blockperf.blocklog import Blocklog, BlocklogLine
+from blockperf.tracing import BlockTrace, TraceEvent, TraceEventKind
 
 logging.basicConfig(level=logging.DEBUG, format="(%(threadName)-9s) %(message)s")
-
+logger = logging.getLogger(logger_name)
 
 class Producer(threading.Thread):
     q: queue.Queue
@@ -24,7 +26,7 @@ class Producer(threading.Thread):
         super(Producer, self).__init__(daemon=True, name=self.__class__.__name__)
         self.q = queue
         self.app_config = app_config
-        logging.debug(f"{self.__class__.__name__} initialized")
+        #logger.debug(f"{self.__class__.__name__} __init__")
 
     def read_logfiles(self) -> list:
         """Reads the last three logfiles from the logdir."""
@@ -42,36 +44,6 @@ class Producer(threading.Thread):
         res = end - start  # time it took to run
         print(f"Read in {res}")
         return loglines
-
-    def to_cli_message(self, blocklog: Blocklog):
-        """
-        The Goal is to print a messages like this per BlockPerf
-
-        Block:.... 792747 ( f581876904 ...)
-        Slot..... 24845021 (4s)
-        ......... 2023-05-23 13:23:41
-        Header... 2023-04-03 13:23:41,170 (+170 ms) from 207.180.196.63:3001
-        RequestX. 2023-04-03 13:23:41,170 (+0 ms)
-        Block.... 2023-04-03 13:23:41,190 (+20 ms) from 207.180.196.63:3001
-        Adopted.. 2023-04-03 13:23:41,190 (+0 ms)
-        Size..... 870 bytes
-        delay.... 0.192301717 sec
-        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-        """
-        slot_num_delta = blocklog.slot_num - self.last_slot_num
-        # ? blockSlot-slotHeightPrev -> Delta between this slot and the last one that had a block?
-        msg = (
-            f"Block:.... {blocklog.block_num} ({blocklog.block_hash_short})\n"
-            f"Slot:..... {blocklog.slot_num} ({slot_num_delta}s)\n"
-            f".......... {blocklog.slot_time}\n"  # Assuming this is the slot_time
-            f"Header ... {blocklog.first_trace_header.at} ({blocklog.header_delta}) from {blocklog.header_remote_addr}:{blocklog.header_remote_port}\n"
-            f"RequestX.. {blocklog.fetch_request_completed_block.at} ({blocklog.block_request_delta})\n"
-            f"Block..... {blocklog.first_completed_block.at} ({blocklog.block_response_delta}) from {blocklog.block_remote_addr}:{blocklog.block_remote_port}\n"
-            f"Adopted... {blocklog.block_adopt} ({blocklog.block_adopt_delta})\n"
-            f"Size...... {blocklog.block_size} bytes\n"
-            f"Delay..... {blocklog.block_delay} sec\n\n"
-        )
-        sys.stdout.write(msg)
 
 
 @dataclass
@@ -106,13 +78,13 @@ class EkgProducer(Producer):
     #    super(EkgProducer, self).__init__(daemon=True, name="producer")
     #    self.q = queue
     #    self.app_config = app_config
-    #    logging.debug("Producer initialized")
+    #    logger.debug("Producer initialized")
     #
     def run(self):
         """Runs the Producer thread. Will get called from Thread base once ready.
         If run() finishes the thread will finish.
         """
-        logging.debug(
+        logger.debug(
             f"Running {self.__class__.__name__} on {self.app_config.ekg_url} "
         )
         while True:
@@ -121,10 +93,10 @@ class EkgProducer(Producer):
                 self._run()
             except EkgError as e:
                 msg = f"EkgError {e.reason}"
-                logging.error(e)
+                logger.error(e)
             except URLError as e:
                 msg = f"URLError {e.reason}; {self.app_config.ekg_url}"
-                logging.error(msg)
+                logger.error(msg)
             finally:
                 time.sleep(EKG_RETRY_INTERVAL)
 
@@ -159,7 +131,7 @@ class EkgProducer(Producer):
         if not block_nums_announced:
             # Nothing announced, start over
             return
-        logging.debug(f"block_nums received from ekg {block_nums_announced}")
+        logger.debug(f"block_nums received from ekg {block_nums_announced}")
 
         # Create list of Blocklogs for the given block_nums
         blocklogs_found = self.blocklogs_from_block_nums(block_nums_announced)
@@ -178,7 +150,7 @@ class EkgProducer(Producer):
             pass
 
         if not blocklogs_found:
-            logging.debug(f"No blocklogs to report found")
+            logger.debug(f"No blocklogs to report found")
 
         for blocklog in blocklogs_found:
             print()
@@ -284,79 +256,85 @@ class LogfilesProducer(Producer):
     As the EkgProducer it runs in a loop and regularly reads in the logfiles.
     For all these logfiles, it searchs the individual hashes it finds.
     """
-
     trace_events = dict()  # The list of blocks seen from the logfile
 
-    last_block_num: int = 0
-    last_fork_height: int = 0
-    last_slot_num: int = 0
+    def __init__(self, queue, app_config: AppConfig):
+        super(LogfilesProducer, self).__init__(queue=queue, app_config = app_config)
 
-    # def __init__(self, queue, app_config: AppConfig):
-    #    super(EkgProducer, self).__init__(daemon=True, name="producer")
-    #    self.q = queue
-    #    self.app_config = app_config
-    #    logging.debug("Producer initialized")
-    #
     def run(self):
         """Runs the Producer thread. Will get called from Thread base once ready.
         If run() finishes the thread will finish.
         """
-        logging.debug(
-            f"Running {self.__class__.__name__} on {self.app_config.ekg_url} "
-        )
         while True:
             try:
                 self._run()
             except Exception as e:
-                logging.exception(e)
+                logger.exception(e)
             finally:
-                print("Thread Sleeping ")
+                print("Thread Sleeping ... ")
                 time.sleep(3)
 
-    def watch_node_log(self):
-        node_log = Path(self.app_config.node_logs_dir).joinpath("node.json")
-        if not node_log.exists():
-            sys.exit("Dooh")
-        node_log = open(node_log, "r")
-        while True:
-            # readline returns '' if no changes since last call
-            _line = node_log.readline()
-            if _line:
-                event = TraceEvent(_line)
-                # Filter out, do more stuff before yielding event
-                if event.kind in (
-                    TraceKind.TRACE_DOWNLOADED_HEADER,
-                    TraceKind.SEND_FETCH_REQUEST,
-                    TraceKind.COMPLETED_BLOCK_FETCH,
-                    TraceKind.ADDED_CURRENT_CHAIN,
-                ):
-                    yield (event)
-            else:
-                time.sleep(1)
-
     def _run(self):
-        # Read the last three files
-        #  * Extract all blockhashes of the files.
-        #  * Create a huge dict that has the blockhash as key and a list of lines
-        #    for that hash as value.
-        #  *
+        logger.debug(
+            f"{self.__class__.__name__}::_run()"
+        )
+        finished_block_kinds = (
+            TraceEventKind.ADDED_TO_CURRENT_CHAIN,
+            TraceEventKind.SWITCHED_TO_A_FORK,
+        )
+        for event in self.node_log_events():
+            logger.debug(event)
+            assert event.block_hash, f"Found a trace that has no hash {event}"
+            if not event.block_hash in self.trace_events:
+                self.trace_events[event.block_hash] = list()
+            self.trace_events[event.block_hash].append(event)
 
-        for event in self.watch_node_log():
-            print(event)
-            if event.kind in (
-                TraceKind.ADDED_TO_CURRENT_CHAIN,
-                TraceKind.SWITCHED_TO_A_FORK,
-            ):
-                # Bam, Process and add to queue
-                pass
-            # else goi on
-            print(f"hash {event.block_hash}")
-            # if not bl.block_hash in self.trace_events:
-            #    self.trace_events[bl.block_hash] = BlockTrace()
-            # self.trace_events[bl.block_hash].add_line(bl)
+            if event.kind in finished_block_kinds:
+                _h = event.block_hash[0:9]
+                logger.debug(f"Found {len(self.trace_events[event.block_hash])} events for {_h}")
+                logger.debug(f"Blocks tracked {len(self.trace_events.keys())}")
+                self.send_blocktrace(event.block_hash)
 
-        # self.trace_events is now a dict of blockhashs with lists of BlocklogLine's
-        # print(len(self.trace_events.keys()))
+    def node_log_events(self):
+        """Generator that constantly reads the log file and yields new lines from that.
+        It will only yield lines of certain event kinds, because we are only
+        interested in those for now.
+        """
+        interesting_kinds = (
+            TraceEventKind.TRACE_DOWNLOADED_HEADER,
+            TraceEventKind.SEND_FETCH_REQUEST,
+            TraceEventKind.COMPLETED_BLOCK_FETCH,
+            TraceEventKind.ADDED_TO_CURRENT_CHAIN,
+        )
+        node_log_path = Path(self.app_config.node_logs_dir).joinpath("node.json")
+        if not node_log_path.exists():
+            sys.exit(f"{node_log_path} does not exist!")
+        logger.debug(f"Generating events from {node_log_path}")
+
+        # Constantly read the new lines from the logfile and yield each
+        # fp is moved to end of file first, to only "see" new lines written now
+        with open(node_log_path, "r") as node_log:
+            node_log.seek(0,2)
+            while True:
+                new_line = node_log.readline()
+                if not new_line:
+                    # wait a moment to avoid incomplete lines bubbling up ...
+                    time.sleep(0.1)
+                    continue
+                event = TraceEvent.from_logline(new_line)
+                if event and event.kind in interesting_kinds:
+                    yield (event)
+
+    def send_blocktrace(self, block_hash):
+        """Sends a blocktrace, for given hash"""
+        events = self.trace_events.pop(block_hash)
+        bt = BlockTrace(events)
+        sys.stdout.write(bt.msg_string())
+        self.q.put(bt)
+        # self.to_cli_message(bt)
+        #print()
+        # self.q.put(blocklog)
+
 
 
 #

@@ -5,3 +5,4 @@ import importlib.metadata
 
 ##if sys.version_info >= 3.8:
 __version__ = importlib.metadata.version("blockperf")
+logger_name = "blockperf"

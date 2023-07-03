@@ -17,12 +17,12 @@ from pprint import pprint
 import paho.mqtt.client as mqtt
 
 from blockperf import __version__ as blockperf_version
-from blockperf.blocklog import Blocklog
+from blockperf import logger_name
 from blockperf.config import AppConfig
-from blockperf.producer import EkgProducer, LogfilesProducer
+from blockperf.tracing import BlockTrace, TraceEvent, TraceEventKind
 
 logging.basicConfig(level=logging.DEBUG, format="(%(threadName)-9s) %(message)s")
-
+logger = logging.getLogger(logger_name)
 
 class BlocklogConsumer(threading.Thread):
     """Consumes every Blocklog that is put into the queue.
@@ -40,36 +40,39 @@ class BlocklogConsumer(threading.Thread):
         )
         self.q = queue
         self.app_config = app_config
-        logging.debug("Consumer initialized")
+        logger.debug("Consumer initialized")
 
-    def build_payload_from(self, blocklog: Blocklog) -> str:
+    def build_payload_from(self, blocktrace: BlockTrace) -> str:
         """Converts a given Blocklog into a json payload for sending to mqtt broker"""
         message = {
             "magic": self.app_config.network_magic,
             "bpVersion": blockperf_version,
-            "blockNo": blocklog.block_num,
-            "slotNo": blocklog.slot_num,
-            "blockHash": blocklog.block_hash,
-            "blockSize": blocklog.block_size,
-            "headerRemoteAddr": blocklog.header_remote_addr,
-            "headerRemotePort": blocklog.header_remote_port,
-            "headerDelta": blocklog.header_delta,
-            "blockReqDelta": blocklog.block_request_delta,
-            "blockRspDelta": blocklog.block_response_delta,
-            "blockAdoptDelta": blocklog.block_adopt_delta,
-            "blockRemoteAddress": blocklog.block_remote_addr,
-            "blockRemotePort": blocklog.block_remote_port,
-            # "blockLocalAddress": blocklog.block_local_address,
-            # "blockLocalPort": blocklog.block_local_port,
-            "blockG": blocklog.block_g,
+            "blockNo": blocktrace.block_num,
+            "slotNo": blocktrace.slot_num,
+            "blockHash": blocktrace.block_hash,
+            "blockSize": blocktrace.block_size,
+            "headerRemoteAddr": blocktrace.header_remote_addr,
+            "headerRemotePort": blocktrace.header_remote_port,
+            "headerDelta": blocktrace.header_delta,
+            "blockReqDelta": blocktrace.block_request_delta,
+            "blockRspDelta": blocktrace.block_response_delta,
+            "blockAdoptDelta": blocktrace.block_adopt_delta,
+            "blockRemoteAddress": blocktrace.block_remote_addr,
+            "blockRemotePort": blocktrace.block_remote_port,
+            # "blockLocalAddress": blocktrace.block_local_address,
+            # "blockLocalPort": blocktrace.block_local_port,
+            "blockG": blocktrace.block_g,
         }
         return json.dumps(message, default=str)
+
+
+
 
     @property
     def mqtt_client(self) -> mqtt.Client:
         # Returns the mqtt client, or creates one if there is none
         if not hasattr(self, "_mqtt_client"):
-            logging.info("(Re)Creating new mqtt client")
+            logger.info("(Re)Creating new mqtt client")
             # Every new client will start clean unless client_id is specified
             self._mqtt_client = mqtt.Client(protocol=mqtt.MQTTv5)
             self._mqtt_client.on_connect = self.on_connect_callback
@@ -91,12 +94,13 @@ class BlocklogConsumer(threading.Thread):
         """Runs the Consumer thread. Will get called from Thread base once ready.
         If run() finishes, the thread will finish.
         """
+        self.mqtt_client
         broker_url, broker_port = (
             self.app_config.mqtt_broker_url,
             self.app_config.mqtt_broker_port,
         )
-        logging.debug(
-            f"Running {self.__class__.__name__} on {broker_url}:{broker_port}"
+        logger.debug(
+            f"Connecting to {broker_url}:{broker_port}"
         )
         self.mqtt_client.connect(broker_url, broker_port)
         self.mqtt_client.loop_start()  # Starts thread for pahomqtt to process messages
@@ -105,18 +109,18 @@ class BlocklogConsumer(threading.Thread):
         # the consumer accept messages (and not be able to publish)
         # i decided to ensure the connection is established this way
         while not self.mqtt_client.is_connected:
-            logging.debug("Waiting for mqtt connection ... ")
+            logger.debug("Waiting for mqtt connection ... ")
             time.sleep(0.5)  # Block until connected
 
         while True:
-            logging.debug(
+            logger.debug(
                 f"Waiting for next item in queue, Current size: {self.q.qsize()}"
             )
             # The call to get() blocks until there is something in the queue
-            blocklog = self.q.get()
+            blocktrace = self.q.get()
             if self.q.qsize() > 0:
-                logging.debug(f"{self.q.qsize()} left in queue")
-            payload = self.build_payload_from(blocklog)
+                logger.debug(f"{self.q.qsize()} left in queue")
+            payload = self.build_payload_from(blocktrace)
             topic = self.get_topic()
             start_publish = timer()
             message_info = self.mqtt_client.publish(topic=topic, payload=payload)
@@ -124,33 +128,33 @@ class BlocklogConsumer(threading.Thread):
             message_info.wait_for_publish(5)
             end_publish = timer()
             publish_time = end_publish - start_publish
-            logging.info(
-                f"Published {blocklog.block_hash_short} with mid='{message_info.mid}' to {topic} in {publish_time}"
+            logger.info(
+                f"Published {blocktrace.block_hash_short} with mid='{message_info.mid}' to {topic} in {publish_time}"
             )
             if publish_time > 5.0:
-                logging.warning("Publish time > 5.0")
+                logger.warning("Publish time > 5.0")
 
     def get_topic(self) -> str:
         return f"{self.app_config.topic_base}/{self.app_config.operator}/{self.app_config.relay_public_ip}"
 
-    def on_connect_callback(self, client, userdata, flags, reasonCode, properties):
+    def on_connect_callback(self, client, userdata, flags, reasonCode, properties) -> None:
         """Called when the broker responds to our connection request.
         See paho.mqtt.client.py on_connect()"""
         if not reasonCode == 0:
-            logging.error("Connection error " + str(reasonCode))
+            logger.error("Connection error " + str(reasonCode))
             self._mqtt_connected = False
         else:
             self._mqtt_connected = True
 
-    def on_disconnect_callback(self, client, userdata, reasonCode, properties):
+    def on_disconnect_callback(self, client, userdata, reasonCode, properties) -> None:
         """Called when disconnected from broker
         See paho.mqtt.client.py on_disconnect()"""
-        logging.error(f"Connection lost {reasonCode}")
+        logger.error(f"Connection lost {reasonCode}")
 
-    def on_publish_callback(self, client, userdata, mid):
+    def on_publish_callback(self, client, userdata, mid) -> None:
         """Called when a message is actually received by the broker.
         See paho.mqtt.client.py on_publish()"""
-        logging.info(f"Message {mid} published")
+        logger.info(f"Message {mid} published")
         # There should be a way to know which messages belongs to which
         # item in the queue and acknoledge that specifically
         # self.q.task_done()
@@ -161,11 +165,12 @@ class App:
     app_config: AppConfig
     node_config: dict
 
+    trace_events = dict()  # The list of blocks seen from the logfile
+
     def __init__(self, config: AppConfig) -> None:
-        # config.validate_config()
         self.app_config = config
         self.q = queue.Queue(maxsize=20)
-        logging.debug("App init finished")
+        logger.debug("App init finished")
 
     def _check_already_running(self) -> None:
         """Checks if an instance is already running, exitst if it does!
@@ -186,22 +191,92 @@ class App:
             # that would delete and recreate the file?
             sys.exit(f"Could not acquire exclusive lock on {lock_file}")
 
+    def consume_blocktrace(self):
+        """Runs the Consumer thread. Will get called from Thread base once ready.
+        If run() finishes, the thread will finish.
+        """
+        while True:
+            logger.debug(
+                f"Waiting for next item in queue, Current size: {self.q.qsize()}"
+            )
+            # The call to get() blocks until there is something in the queue
+            blocktrace = self.q.get()
+
+
+    def generate_log_events(self):
+        """Generator that yields new lines from the logfile as they come in."""
+        interesting_kinds = (
+            TraceEventKind.TRACE_DOWNLOADED_HEADER,
+            TraceEventKind.SEND_FETCH_REQUEST,
+            TraceEventKind.COMPLETED_BLOCK_FETCH,
+            TraceEventKind.ADDED_TO_CURRENT_CHAIN,
+        )
+        node_log_path = Path(self.app_config.node_logs_dir).joinpath("node.json")
+        if not node_log_path.exists():
+            sys.exit(f"{node_log_path} does not exist!")
+        logger.debug(f"Generating events from {node_log_path}")
+
+        # Constantly read the new lines from the logfile and yield each
+        # fp is moved to end of file first, to only "see" new lines written now
+        with open(node_log_path, "r") as node_log:
+            node_log.seek(0,2)
+            while True:
+                new_line = node_log.readline()
+                if not new_line:
+                    # wait a moment to avoid incomplete lines bubbling up ...
+                    time.sleep(0.1)
+                    continue
+                event = TraceEvent.from_logline(new_line)
+                if event and event.kind in interesting_kinds:
+                    yield (event)
+
+    def produce_blocktraces(self):
+        finished_block_kinds = (
+            TraceEventKind.ADDED_TO_CURRENT_CHAIN,
+            TraceEventKind.SWITCHED_TO_A_FORK,
+        )
+        while True:
+            try:
+                for event in self.generate_log_events():
+                    logger.debug(event)
+                    assert event.block_hash, f"Found a trace that has no hash {event}"
+
+                    # Add event to list in identified by event.block_hash
+                    if not event.block_hash in self.trace_events:
+                        self.trace_events[event.block_hash] = list()
+                    self.trace_events[event.block_hash].append(event)
+
+                    # If the event is not finishing a block move on
+                    if not event.kind in finished_block_kinds:
+                        continue
+
+                    _h = event.block_hash[0:9]
+                    logger.debug(f"Found {len(self.trace_events[event.block_hash])} events for {_h}")
+                    logger.debug(f"Blocks tracked {len(self.trace_events.keys())}")
+                    # Create a BlockTrace from all events for given hash
+                    events = self.trace_events.pop(event.block_hash)
+                    bt = BlockTrace(events)
+                    sys.stdout.write(bt.msg_string())
+                    self.q.put(bt)
+            except Exception as e:
+                logger.exception(e)
+            finally:
+                print("Thread Sleeping ... ")
+                time.sleep(3)
+
     def run(self):
+        """Run the App by creating the two threads and starting them."""
         self._check_already_running()
-        # The producers produces "Blocklogs", which each represent
-        # one block worth of performance data. So for any given block
-        # seen on chain, a Blocklog will be put into the queue
 
         # producer = EkgProducer(queue=self.q, app_config=self.app_config)
-        producer = LogfilesProducer(queue=self.q, app_config=self.app_config)
-        producer.start()
+        #producer_thread = LogfilesProducer(queue=self.q, app_config=self.app_config)
+        producer_thread = threading.Thread(target=self.produce_blocktraces, args=())
+        producer_thread.start()
 
-        # The consumer takes Blocklogs from the queue and sends them to
-        # the mqtt broker. It creates the json structure needed from
-        # any given Blocklog and handles the mqtt connection and publishing
         consumer = BlocklogConsumer(queue=self.q, app_config=self.app_config)
+        #consumer = threading.Thread(target=self.consume_blocktrace, args=())
         consumer.start()
 
         # Blocks main thread until all joined threads are finished
-        producer.join()
+        producer_thread.join()
         consumer.join()
