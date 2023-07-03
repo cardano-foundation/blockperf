@@ -42,31 +42,29 @@ class BlocklogConsumer(threading.Thread):
         self.app_config = app_config
         logger.debug("Consumer initialized")
 
-    def build_payload_from(self, blocktrace: BlockTrace) -> str:
-        """Converts a given Blocklog into a json payload for sending to mqtt broker"""
+    def build_payload_from(self, blocktrace: BlockTrace) -> dict:
+        """Converts a given Blocklog into a dict with values ready for sending to mqtt broker"""
         message = {
-            "magic": self.app_config.network_magic,
-            "bpVersion": blockperf_version,
-            "blockNo": blocktrace.block_num,
-            "slotNo": blocktrace.slot_num,
-            "blockHash": blocktrace.block_hash,
-            "blockSize": blocktrace.block_size,
-            "headerRemoteAddr": blocktrace.header_remote_addr,
-            "headerRemotePort": blocktrace.header_remote_port,
-            "headerDelta": blocktrace.header_delta,
-            "blockReqDelta": blocktrace.block_request_delta,
-            "blockRspDelta": blocktrace.block_response_delta,
-            "blockAdoptDelta": blocktrace.block_adopt_delta,
-            "blockRemoteAddress": blocktrace.block_remote_addr,
-            "blockRemotePort": blocktrace.block_remote_port,
-            # "blockLocalAddress": blocktrace.block_local_address,
-            # "blockLocalPort": blocktrace.block_local_port,
-            "blockG": blocktrace.block_g,
+            "magic": str(self.app_config.network_magic),
+            "bpVersion": f"v{blockperf_version}",
+            "blockNo": str(blocktrace.block_num),
+            "slotNo": str(blocktrace.slot_num),
+            "blockHash": str(blocktrace.block_hash),
+            "blockSize": str(blocktrace.block_size),
+            "headerRemoteAddr": str(blocktrace.header_remote_addr),
+            "headerRemotePort": str(blocktrace.header_remote_port),
+            "headerDelta": str(blocktrace.header_delta),
+            "blockReqDelta": str(blocktrace.block_request_delta),
+            "blockRspDelta": str(blocktrace.block_response_delta),
+            "blockAdoptDelta": str(blocktrace.block_adopt_delta),
+            "blockRemoteAddress": str(blocktrace.block_remote_addr),
+            "blockRemotePort": str(blocktrace.block_remote_port),
+            "blockLocalAddress": str(blocktrace.block_local_address),
+            "blockLocalPort": str(blocktrace.block_local_port),
+            "blockG": str(blocktrace.block_g),
         }
-        return json.dumps(message, default=str)
-
-
-
+        pprint(json.dumps(message, default=str))
+        return message
 
     @property
     def mqtt_client(self) -> mqtt.Client:
@@ -123,7 +121,10 @@ class BlocklogConsumer(threading.Thread):
             payload = self.build_payload_from(blocktrace)
             topic = self.get_topic()
             start_publish = timer()
-            message_info = self.mqtt_client.publish(topic=topic, payload=payload)
+            message_info = self.mqtt_client.publish(
+                topic=topic,
+                payload=json.dumps(payload, default=str)
+            )
             # wait_for_publish blocks until timeout for the message to be published
             message_info.wait_for_publish(5)
             end_publish = timer()
@@ -216,14 +217,14 @@ class App:
             sys.exit(f"{node_log_path} does not exist!")
         logger.debug(f"Generating events from {node_log_path}")
 
-        # Constantly read the new lines from the logfile and yield each
-        # fp is moved to end of file first, to only "see" new lines written now
+        # Open logfile and constantly read it,
         with open(node_log_path, "r") as node_log:
+            # Move fp to end to only see "new" lines
             node_log.seek(0,2)
             while True:
                 new_line = node_log.readline()
+                # wait a moment to avoid incomplete lines bubbling up ...
                 if not new_line:
-                    # wait a moment to avoid incomplete lines bubbling up ...
                     time.sleep(0.1)
                     continue
                 event = TraceEvent.from_logline(new_line)
@@ -253,7 +254,7 @@ class App:
                     _h = event.block_hash[0:9]
                     logger.debug(f"Found {len(self.trace_events[event.block_hash])} events for {_h}")
                     logger.debug(f"Blocks tracked {len(self.trace_events.keys())}")
-                    # Create a BlockTrace from all events for given hash
+                    # Get events from
                     events = self.trace_events.pop(event.block_hash)
                     bt = BlockTrace(events)
                     sys.stdout.write(bt.msg_string())
@@ -268,8 +269,6 @@ class App:
         """Run the App by creating the two threads and starting them."""
         self._check_already_running()
 
-        # producer = EkgProducer(queue=self.q, app_config=self.app_config)
-        #producer_thread = LogfilesProducer(queue=self.q, app_config=self.app_config)
         producer_thread = threading.Thread(target=self.produce_blocktraces, args=())
         producer_thread.start()
 

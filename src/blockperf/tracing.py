@@ -235,6 +235,38 @@ class BlockTrace:
     specific block. When was its header first announced, when did it first
     completed downloading etc.
 
+        * headerRemoteAddr  fill in from peer that first send TraceHeader
+        * headerRemotePort  fill in from peer that first send TraceHeader
+
+        * headerDelta       Is the time from the slot_time of this block
+                            until the node received the first header
+                            FirstTraceHeader.at - slot_time
+                            We want to know the delta between when the header could
+                            be available (beginning of the slot)  until its actually
+                            available to this node (trace header received)
+
+        * blockReqDelta     Find the FetchRequest that belongs to first CompletedBlock
+                            FetchRequest.at - first TraceHeader.at
+                            We want to know how long it took the node from first
+                            seeing the header until it requested that header
+
+        * blockRspDelta     Find the FetchRequest that belongs to first CompletedBlock
+                            CompletedBlock at - FetchRequest at
+                            We want to know how long it took the other node to
+                            complete the send of the block after requesting it
+
+        * blockAdoptDelta   We want to know how long it took the node to successfully
+                            adopt a block after it has completed receiving it
+                            first AddToCurrentChain.at - first CompletedBlock.at
+
+        * blockRemoteAddress  # fill in from peer that first resulted in CompletedBlock
+        * blockRemotePort     # fill in from peer that first resulted in CompletedBlock
+        * blockLocalAddress   # Taken from blockperf config
+        * blockLocalPort      # Taken from blockperf config
+        * blockG              # Find FetchRequest for first CompletedBlock (remote addr/port match)
+                              # Take deltaq.G from that FetchRequest
+
+
     """
     tace_events = list()
 
@@ -295,7 +327,7 @@ class BlockTrace:
     def slot_num_delta(self) -> timedelta:
         """Calculated the time betwenn when the given slot should have been,
         versus the actual time is has been."""
-        return self.slot_num - # self.last_slot_num
+        return self.slot_num #- self.last_slot_num
 
     def msg_string(self):
         """
@@ -312,8 +344,6 @@ class BlockTrace:
         delay.... 0.192301717 sec
         ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
         """
-
-
         # ? blockSlot-slotHeightPrev -> Delta between this slot and the last one that had a block?
         msg = (
             f"Block:.... {self.block_num} ({self.block_hash_short})\n"
@@ -322,7 +352,7 @@ class BlockTrace:
             f"Header ... {self.first_trace_header.at} ({self.header_delta}) from {self.header_remote_addr}:{self.header_remote_port}\n"
             f"RequestX.. {self.fetch_request_completed_block.at} ({self.block_request_delta})\n"
             f"Block..... {self.first_completed_block.at} ({self.block_response_delta}) from {self.block_remote_addr}:{self.block_remote_port}\n"
-            f"Adopted... {self.block_adopt} ({self.block_adopt_delta})\n"
+            f"Adopted... {self.block_adopt.at} ({self.block_adopt_delta})\n"
             f"Size...... {self.block_size} bytes\n"
             f"Delay..... {self.block_delay} sec\n\n"
         )
@@ -342,6 +372,7 @@ class BlockTrace:
 
     @property
     def slot_time(self) -> datetime:
+        """Time the slot_num should have happened."""
         _network_start = network_starttime.get("mainnet", 0)
         # print(f"_network_start {_network_start} self.slot_num {self.slot_num}")
         _slot_time = _network_start + self.slot_num
@@ -351,10 +382,15 @@ class BlockTrace:
         return slot_time
 
     @property
-    def header_delta(self) -> timedelta:
-        #if not self.first_trace_header or not self.slot_time:
-            #return 0
-        return self.first_trace_header.at - self.slot_time
+    def header_delta(self) -> int:
+        """Header delta in miliseconds
+
+        The time from the slot_time of this block until the node received the
+        first header. When could this header be received vs when was
+        it actually received.
+        """
+        header_delta = self.first_trace_header.at - self.slot_time
+        return int(header_delta.total_seconds() * 1000)
 
     @property
     def block_num(self) -> int:
@@ -377,29 +413,50 @@ class BlockTrace:
         return self.first_completed_block.delay
 
     @property
-    def block_request_delta(self) -> timedelta:
-        return self.fetch_request_completed_block.at - self.first_trace_header.at
+    def block_request_delta(self) -> int:
+        """Block request delta in miliseconds
 
-    @property
-    def block_response_delta(self) -> timedelta:
-        return self.first_completed_block.at - self.fetch_request_completed_block.at
-
-    @property
-    def block_adopt(self) -> Union[datetime, int]:
-        """Returns the
+        The time it took the node from seeing a block first (the header was
+        received) to actually requesting that block.
         """
+        block_request_delta = self.fetch_request_completed_block.at - self.first_trace_header.at
+        return int(block_request_delta.total_seconds() * 1000)
+
+    @property
+    def block_response_delta(self) -> int:
+        """Block response deltain miliseconds
+
+        The time it took to have completed the download of a given block
+        after requesting it from a peer.
+        """
+        block_response_delta = self.first_completed_block.at - self.fetch_request_completed_block.at
+        return int(block_response_delta.total_seconds() * 1000)
+
+    @property
+    def block_adopt(self) -> Union[TraceEvent, None]:
+        """Return TraceEvent that this block was adopted with"""
         for event in self.tace_events:
             if event.kind in (
                 TraceEventKind.ADDED_TO_CURRENT_CHAIN,
                 TraceEventKind.SWITCHED_TO_A_FORK
             ):
-                return event.at
-        logger.error(f"{self} has no block_adopt")
-        return 0
+                return event
+        logger.error(f"{self.block_hash_short} has not been adopted!")
+        return None
 
     @property
-    def block_adopt_delta(self) -> Union[datetime, int]:
-        return self.block_adopt - self.first_completed_block.at
+    def block_adopt_delta(self) -> int:
+        """Block adopt delta in miliseconds
+
+        The time it took the node to successfully adopt a block after it
+        has completed receiving it.
+        """
+        block_adopt = self.block_adopt
+        if not block_adopt:
+            return 0
+
+        block_adopt_delta = self.block_adopt.at - self.first_completed_block.at
+        return int(block_adopt_delta.total_seconds() * 1000)
 
     @property
     def block_g(self) -> str:
