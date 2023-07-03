@@ -6,6 +6,8 @@ from datetime import datetime, timezone, timedelta
 import logging
 
 from blockperf import logger_name
+from blockperf import __version__ as blockperf_version
+from blockperf.config import AppConfig
 
 logging.basicConfig(level=logging.DEBUG, format="(%(threadName)-9s) %(message)s")
 logger = logging.getLogger(logger_name)
@@ -269,21 +271,19 @@ class BlockTrace:
 
     """
     tace_events = list()
-
+    app_config: AppConfig
     _first_trace_header: TraceEvent
     _first_completed_block: TraceEvent
     _fetch_request_completed_block: TraceEvent
 
-    def __init__(self, events) -> None:
+    def __init__(self, events, app_config: AppConfig) -> None:
         # Make sure they are order by their time
+        self.app_config = app_config
         events.sort(key=lambda x: x.at)
         self.tace_events = events
 
-    def __str__(self):
-        # Number of Header Downloads
-        # Numer of CompletedBockFetchs
-        # Number of SendFetchRequests
-        return f"<{__class__.__name__}>"
+    #def __str__(self):
+    #    return f"<{__class__.__name__}>"
 
     @property
     def first_trace_header(self) -> TraceEvent:
@@ -328,35 +328,6 @@ class BlockTrace:
         """Calculated the time betwenn when the given slot should have been,
         versus the actual time is has been."""
         return self.slot_num #- self.last_slot_num
-
-    def msg_string(self):
-        """
-        The Goal is to print a messages like this per BlockPerf
-
-        Block:.... 792747 ( f581876904 ...)
-        Slot..... 24845021 (4s)
-        ......... 2023-05-23 13:23:41
-        Header... 2023-04-03 13:23:41,170 (+170 ms) from 207.180.196.63:3001
-        RequestX. 2023-04-03 13:23:41,170 (+0 ms)
-        Block.... 2023-04-03 13:23:41,190 (+20 ms) from 207.180.196.63:3001
-        Adopted.. 2023-04-03 13:23:41,190 (+0 ms)
-        Size..... 870 bytes
-        delay.... 0.192301717 sec
-        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-        """
-        # ? blockSlot-slotHeightPrev -> Delta between this slot and the last one that had a block?
-        msg = (
-            f"Block:.... {self.block_num} ({self.block_hash_short})\n"
-            f"Slot:..... {self.slot_num} ({self.slot_num_delta}s)\n"
-            f".......... {self.slot_time}\n"  # Assuming this is the slot_time
-            f"Header ... {self.first_trace_header.at} ({self.header_delta}) from {self.header_remote_addr}:{self.header_remote_port}\n"
-            f"RequestX.. {self.fetch_request_completed_block.at} ({self.block_request_delta})\n"
-            f"Block..... {self.first_completed_block.at} ({self.block_response_delta}) from {self.block_remote_addr}:{self.block_remote_port}\n"
-            f"Adopted... {self.block_adopt.at} ({self.block_adopt_delta})\n"
-            f"Size...... {self.block_size} bytes\n"
-            f"Delay..... {self.block_delay} sec\n\n"
-        )
-        return msg
 
     @property
     def header_remote_addr(self) -> str:
@@ -472,8 +443,63 @@ class BlockTrace:
 
     @property
     def block_local_address(self) -> str:
+        #return self.app_config.relay_public_ip
         return self.first_completed_block.local_addr
 
     @property
     def block_local_port(self) -> str:
+        #return self.app_config.relay_public_port
         return self.first_completed_block.local_port
+
+
+    def as_msg_string(self):
+        """
+        The Goal is to print a messages like this per BlockPerf
+
+        Block:.... 792747 ( f581876904 ...)
+        Slot..... 24845021 (4s)
+        ......... 2023-05-23 13:23:41
+        Header... 2023-04-03 13:23:41,170 (+170 ms) from 207.180.196.63:3001
+        RequestX. 2023-04-03 13:23:41,170 (+0 ms)
+        Block.... 2023-04-03 13:23:41,190 (+20 ms) from 207.180.196.63:3001
+        Adopted.. 2023-04-03 13:23:41,190 (+0 ms)
+        Size..... 870 bytes
+        delay.... 0.192301717 sec
+        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+        """
+        # ? blockSlot-slotHeightPrev -> Delta between this slot and the last one that had a block?
+        msg = (
+            f"Block:.... {self.block_num} ({self.block_hash_short})\n"
+            f"Slot:..... {self.slot_num} ({self.slot_num_delta}s)\n"
+            f".......... {self.slot_time}\n"  # Assuming this is the slot_time
+            f"Header ... {self.first_trace_header.at} ({self.header_delta}) from {self.header_remote_addr}:{self.header_remote_port}\n"
+            f"RequestX.. {self.fetch_request_completed_block.at} ({self.block_request_delta})\n"
+            f"Block..... {self.first_completed_block.at} ({self.block_response_delta}) from {self.block_remote_addr}:{self.block_remote_port}\n"
+            f"Adopted... {self.block_adopt.at} ({self.block_adopt_delta})\n"
+            f"Size...... {self.block_size} bytes\n"
+            f"Delay..... {self.block_delay} sec\n\n"
+        )
+        return msg
+
+    def as_payload_dict(self):
+        """Return the data as a dict suitable to be sent to mqtt"""
+        message = {
+            "magic": str(self.app_config.network_magic),
+            "bpVersion": f"v{blockperf_version}",
+            "blockNo": str(self.block_num),
+            "slotNo": str(self.slot_num),
+            "blockHash": str(self.block_hash),
+            "blockSize": str(self.block_size),
+            "headerRemoteAddr": str(self.header_remote_addr),
+            "headerRemotePort": str(self.header_remote_port),
+            "headerDelta": str(self.header_delta),
+            "blockReqDelta": str(self.block_request_delta),
+            "blockRspDelta": str(self.block_response_delta),
+            "blockAdoptDelta": str(self.block_adopt_delta),
+            "blockRemoteAddress": str(self.block_remote_addr),
+            "blockRemotePort": str(self.block_remote_port),
+            "blockLocalAddress": str(self.block_local_address),
+            "blockLocalPort": str(self.block_local_port),
+            "blockG": str(self.block_g),
+        }
+        return message

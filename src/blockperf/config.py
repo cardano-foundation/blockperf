@@ -78,6 +78,11 @@ class AppConfig:
         return relay_public_ip
 
     @property
+    def relay_public_port(self) -> int:
+        relay_public_port = int(self._config.get("DEFAULT", "relay_public_port", fallback=3001))
+        return relay_public_port
+
+    @property
     def client_cert(self) -> str:
         client_cert = self._config.get("DEFAULT", "client_cert")
         if not client_cert:

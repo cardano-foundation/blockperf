@@ -24,47 +24,52 @@ from blockperf.tracing import BlockTrace, TraceEvent, TraceEventKind
 logging.basicConfig(level=logging.DEBUG, format="(%(threadName)-9s) %(message)s")
 logger = logging.getLogger(logger_name)
 
-class BlocklogConsumer(threading.Thread):
-    """Consumes every Blocklog that is put into the queue.
-    Consuming means, taking its message and sending it through MQTT.
-    """
 
+class App:
     q: queue.Queue
-    _mqtt_client: mqtt.Client
     app_config: AppConfig
-    app: "App"
+    node_config: dict
+    _mqtt_client: mqtt.Client
+    trace_events = dict()  # The list of blocks seen from the logfile
 
-    def __init__(self, queue, app_config: AppConfig):
-        super(BlocklogConsumer, self).__init__(
-            daemon=True, name=self.__class__.__name__
-        )
-        self.q = queue
-        self.app_config = app_config
-        logger.debug("Consumer initialized")
+    def __init__(self, config: AppConfig) -> None:
+        self.app_config = config
+        self.q = queue.Queue(maxsize=20)
+        logger.debug("App init finished")
 
-    def build_payload_from(self, blocktrace: BlockTrace) -> dict:
-        """Converts a given Blocklog into a dict with values ready for sending to mqtt broker"""
-        message = {
-            "magic": str(self.app_config.network_magic),
-            "bpVersion": f"v{blockperf_version}",
-            "blockNo": str(blocktrace.block_num),
-            "slotNo": str(blocktrace.slot_num),
-            "blockHash": str(blocktrace.block_hash),
-            "blockSize": str(blocktrace.block_size),
-            "headerRemoteAddr": str(blocktrace.header_remote_addr),
-            "headerRemotePort": str(blocktrace.header_remote_port),
-            "headerDelta": str(blocktrace.header_delta),
-            "blockReqDelta": str(blocktrace.block_request_delta),
-            "blockRspDelta": str(blocktrace.block_response_delta),
-            "blockAdoptDelta": str(blocktrace.block_adopt_delta),
-            "blockRemoteAddress": str(blocktrace.block_remote_addr),
-            "blockRemotePort": str(blocktrace.block_remote_port),
-            "blockLocalAddress": str(blocktrace.block_local_address),
-            "blockLocalPort": str(blocktrace.block_local_port),
-            "blockG": str(blocktrace.block_g),
-        }
-        pprint(json.dumps(message, default=str))
-        return message
+    def _check_already_running(self) -> None:
+        """Checks if an instance is already running, exitst if it does!
+        Will not work on windows since fcntl is unavailable there!!
+        """
+        lock_file = self.app_config.lock_file
+        lock_file_fp = open(lock_file, "a")
+        try:
+            # Try to get exclusive lock on lockfile
+            fcntl.lockf(lock_file_fp, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            lock_file_fp.seek(0)
+            lock_file_fp.truncate()
+            lock_file_fp.write(str(os.getpid()))
+            lock_file_fp.flush()
+            # Could acquire lock, do nothing and go on
+        except (IOError, BlockingIOError):
+            # Could not acquire lock, maybe implement some --force/--ignore flag
+            # that would delete and recreate the file?
+            sys.exit(f"Could not acquire exclusive lock on {lock_file}")
+
+    def run(self):
+        """Run the App by creating the two threads and starting them."""
+        self._check_already_running()
+
+        # consumer = BlocklogConsumer(queue=self.q, app_config=self.app_config)
+        consumer_thread = threading.Thread(target=self.consume_blocktrace, args=())
+        consumer_thread.start()
+
+        producer_thread = threading.Thread(target=self.produce_blocktraces, args=())
+        producer_thread.start()
+
+        # Blocks main thread until all joined threads are finished
+        producer_thread.join()
+        consumer_thread.join()
 
     @property
     def mqtt_client(self) -> mqtt.Client:
@@ -88,7 +93,32 @@ class BlocklogConsumer(threading.Thread):
             )
         return self._mqtt_client
 
-    def run(self):
+    def get_topic(self) -> str:
+        return f"{self.app_config.topic_base}/{self.app_config.operator}/{self.app_config.relay_public_ip}"
+
+    def on_connect_callback(self, client, userdata, flags, reasonCode, properties) -> None:
+        """Called when the broker responds to our connection request.
+        See paho.mqtt.client.py on_connect()"""
+        if not reasonCode == 0:
+            logger.error("Connection error " + str(reasonCode))
+            self._mqtt_connected = False
+        else:
+            self._mqtt_connected = True
+
+    def on_disconnect_callback(self, client, userdata, reasonCode, properties) -> None:
+        """Called when disconnected from broker
+        See paho.mqtt.client.py on_disconnect()"""
+        logger.error(f"Connection lost {reasonCode}")
+
+    def on_publish_callback(self, client, userdata, mid) -> None:
+        """Called when a message is actually received by the broker.
+        See paho.mqtt.client.py on_publish()"""
+        logger.info(f"Message {mid} published")
+        # There should be a way to know which messages belongs to which
+        # item in the queue and acknoledge that specifically
+        # self.q.task_done()
+
+    def consume_blocktrace(self):
         """Runs the Consumer thread. Will get called from Thread base once ready.
         If run() finishes, the thread will finish.
         """
@@ -118,7 +148,8 @@ class BlocklogConsumer(threading.Thread):
             blocktrace = self.q.get()
             if self.q.qsize() > 0:
                 logger.debug(f"{self.q.qsize()} left in queue")
-            payload = self.build_payload_from(blocktrace)
+            payload = blocktrace.as_payload_dict()
+            pprint(payload)
             topic = self.get_topic()
             start_publish = timer()
             message_info = self.mqtt_client.publish(
@@ -134,75 +165,6 @@ class BlocklogConsumer(threading.Thread):
             )
             if publish_time > 5.0:
                 logger.warning("Publish time > 5.0")
-
-    def get_topic(self) -> str:
-        return f"{self.app_config.topic_base}/{self.app_config.operator}/{self.app_config.relay_public_ip}"
-
-    def on_connect_callback(self, client, userdata, flags, reasonCode, properties) -> None:
-        """Called when the broker responds to our connection request.
-        See paho.mqtt.client.py on_connect()"""
-        if not reasonCode == 0:
-            logger.error("Connection error " + str(reasonCode))
-            self._mqtt_connected = False
-        else:
-            self._mqtt_connected = True
-
-    def on_disconnect_callback(self, client, userdata, reasonCode, properties) -> None:
-        """Called when disconnected from broker
-        See paho.mqtt.client.py on_disconnect()"""
-        logger.error(f"Connection lost {reasonCode}")
-
-    def on_publish_callback(self, client, userdata, mid) -> None:
-        """Called when a message is actually received by the broker.
-        See paho.mqtt.client.py on_publish()"""
-        logger.info(f"Message {mid} published")
-        # There should be a way to know which messages belongs to which
-        # item in the queue and acknoledge that specifically
-        # self.q.task_done()
-
-
-class App:
-    q: queue.Queue
-    app_config: AppConfig
-    node_config: dict
-
-    trace_events = dict()  # The list of blocks seen from the logfile
-
-    def __init__(self, config: AppConfig) -> None:
-        self.app_config = config
-        self.q = queue.Queue(maxsize=20)
-        logger.debug("App init finished")
-
-    def _check_already_running(self) -> None:
-        """Checks if an instance is already running, exitst if it does!
-        Will not work on windows since fcntl is unavailable there!!
-        """
-        lock_file = self.app_config.lock_file
-        lock_file_fp = open(lock_file, "a")
-        try:
-            # Try to get exclusive lock on lockfile
-            fcntl.lockf(lock_file_fp, fcntl.LOCK_EX | fcntl.LOCK_NB)
-            lock_file_fp.seek(0)
-            lock_file_fp.truncate()
-            lock_file_fp.write(str(os.getpid()))
-            lock_file_fp.flush()
-            # Could acquire lock, do nothing and go on
-        except (IOError, BlockingIOError):
-            # Could not acquire lock, maybe implement some --force/--ignore flag
-            # that would delete and recreate the file?
-            sys.exit(f"Could not acquire exclusive lock on {lock_file}")
-
-    def consume_blocktrace(self):
-        """Runs the Consumer thread. Will get called from Thread base once ready.
-        If run() finishes, the thread will finish.
-        """
-        while True:
-            logger.debug(
-                f"Waiting for next item in queue, Current size: {self.q.qsize()}"
-            )
-            # The call to get() blocks until there is something in the queue
-            blocktrace = self.q.get()
-
 
     def generate_log_events(self):
         """Generator that yields new lines from the logfile as they come in."""
@@ -237,45 +199,25 @@ class App:
             TraceEventKind.SWITCHED_TO_A_FORK,
         )
         while True:
-            try:
-                for event in self.generate_log_events():
-                    logger.debug(event)
-                    assert event.block_hash, f"Found a trace that has no hash {event}"
+            for event in self.generate_log_events():
+                logger.debug(event)
+                assert event.block_hash, f"Found a trace that has no hash {event}"
 
-                    # Add event to list in identified by event.block_hash
-                    if not event.block_hash in self.trace_events:
-                        self.trace_events[event.block_hash] = list()
-                    self.trace_events[event.block_hash].append(event)
+                # Add event to list in identified by event.block_hash
+                if not event.block_hash in self.trace_events:
+                    self.trace_events[event.block_hash] = list()
+                self.trace_events[event.block_hash].append(event)
 
-                    # If the event is not finishing a block move on
-                    if not event.kind in finished_block_kinds:
-                        continue
+                # If the event is not finishing a block move on
+                if not event.kind in finished_block_kinds:
+                    continue
 
-                    _h = event.block_hash[0:9]
-                    logger.debug(f"Found {len(self.trace_events[event.block_hash])} events for {_h}")
-                    logger.debug(f"Blocks tracked {len(self.trace_events.keys())}")
-                    # Get events from
-                    events = self.trace_events.pop(event.block_hash)
-                    bt = BlockTrace(events)
-                    sys.stdout.write(bt.msg_string())
-                    self.q.put(bt)
-            except Exception as e:
-                logger.exception(e)
-            finally:
-                print("Thread Sleeping ... ")
-                time.sleep(3)
+                _h = event.block_hash[0:9]
+                logger.debug(f"Found {len(self.trace_events[event.block_hash])} events for {_h}")
+                logger.debug(f"Blocks tracked {len(self.trace_events.keys())}")
+                # Get all events for given hash and delete from list
+                events = self.trace_events.pop(event.block_hash)
+                bt = BlockTrace(events, self.app_config)
+                sys.stdout.write(bt.as_msg_string())
+                self.q.put(bt)
 
-    def run(self):
-        """Run the App by creating the two threads and starting them."""
-        self._check_already_running()
-
-        producer_thread = threading.Thread(target=self.produce_blocktraces, args=())
-        producer_thread.start()
-
-        consumer = BlocklogConsumer(queue=self.q, app_config=self.app_config)
-        #consumer = threading.Thread(target=self.consume_blocktrace, args=())
-        consumer.start()
-
-        # Blocks main thread until all joined threads are finished
-        producer_thread.join()
-        consumer.join()
