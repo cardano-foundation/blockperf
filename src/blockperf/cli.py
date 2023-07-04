@@ -13,7 +13,7 @@ logging.basicConfig(
     level=logging.DEBUG,
     filename='/home/ubuntu/src/blockperf/blockperf.log',
     filemode='w',
-    format="%(asctime)s [%(levelname)s] %(message)s",
+    format="%(name)s %(threadName)s [%(asctime)s %(levelname)s] %(message)s",
     datefmt='%H:%M:%S'
 )
 
@@ -39,9 +39,13 @@ def main(verbose):
 )
 def cmd_run(config_file_path):
     """Run blockperf with given configuration"""
-    LOG.info("Start blockperf")
-    app = App(AppConfig(config_file_path))
-    app.run()
+    try:
+        LOG.info("Start blockperf")
+        app = App(AppConfig(config_file_path))
+        app.run()
+    except Exception as e:
+        LOG.info(" ... > Excepted < ... ")
+        LOG.exception(e)
     LOG.info("Goodbye!")
 
 main.add_command(cmd_run)
