@@ -27,6 +27,7 @@ class App:
     _mqtt_client: mqtt.Client
 
     logevents = dict() # holds all logevents for each hash encountered
+    published_hashes = collections.deque()
 
     def __init__(self, config: AppConfig) -> None:
         self.app_config = config
@@ -178,48 +179,49 @@ class App:
                 print(e)
                 LOG.exception(e)
 
+    def add_logline(self, _hash, logline) -> None:
+        """Add given logline to the list indentified by _hash
+        If there is no list create it along the way."""
+        if not _hash in self.logevents:
+            LOG.debug(f"Creating new list for {_hash}. {len(self.logevents)}" )
+            self.logevents[_hash] = list()
+        self.logevents[_hash].append(logline)
+
+    def send_blocksample(self, _hash):
+        """Create BlockSample for given _hash from the list of all lines for it
+        Then pass that BlockSample to the queue to have the consumer publish it"""
+        events = self.logevents[_hash]
+        sample = BlockSample(events, self.app_config)
+        self.published_hashes.append(_hash)
+        LOG.info(f"Published hashes {len(self.published_hashes)} {self.published_hashes}")
+        # push smaple to consumer
+        self.q.put(sample)
+        if len(self.published_hashes) >= 10:
+            # Remove from left; Latest 10 hashes published will be in deque
+            removed_hash = self.published_hashes.popleft()
+            # Delete that hash from all logevents
+            del self.logevents[removed_hash]
+            LOG.info(f"Removed {removed_hash} from published_hashes")
+        LOG.info(f"Unpublished blocks: {len(self.logevents.keys())}; [{' '.join([ h[0:10] for h in self.logevents.keys()])}]")
+        LOG.info(f"Published hashes {len(self.published_hashes)} {self.published_hashes}")
+
     def produce_blocksamples(self):
+        """Producer thread that """
         adopting_block_kinds = (
             LogLineKind.ADDED_TO_CURRENT_CHAIN,
             LogLineKind.SWITCHED_TO_A_FORK,
         )
-        published_hashes = collections.deque()
         for logline in self.generate_loglines():
             _block_hash = logline.block_hash
             assert _block_hash, f"Found a trace that has no hash {logline}!"
-
             # If the same hash has already been seen published, dont bother
             # But that ac
-            if _block_hash in published_hashes:
+            if _block_hash in self.published_hashes:
                 continue
             LOG.debug(logline)
-
-            if not _block_hash in logevents:
-                LOG.debug(f"Creating new list for {_block_hash}. {len(logevents)}" )
-                logevents[_block_hash] = list()
-            logevents[_block_hash].append(logline)
-
-            # If the event is not yet adopting a block move on
-            if not logline.kind in adopting_block_kinds:
-                continue
-
-            # Get all events for given hash and delete from list
-            events = logevents[_block_hash]
-            sample = BlockSample(events, self.app_config)
-            published_hashes.append(_block_hash)
-            LOG.info(f"Published hashes {len(published_hashes)} {published_hashes}")
-            # push smaple to consumer
-            self.q.put(sample)
-
-            if len(published_hashes) >= 10:
-                # Remove from left; Latest 10 hashes published will be in deque
-                removed_hash = published_hashes.popleft()
-                # Delete that hash from all logevents
-                del logevents[removed_hash]
-                LOG.info(f"Removed {removed_hash} from published_hashes")
-
-            LOG.info(f"Unpublished blocks: {len(logevents.keys())}; [{' '.join([ h[0:10] for h in logevents.keys()])}]")
-            LOG.info(f"Published hashes {len(published_hashes)} {published_hashes}")
+            self.add_logline(_block_hash, logline)
+            if logline.kind in adopting_block_kinds:
+                self.send_blocksample(_block_hash)
 
     def generate_loglines(self):
         """Generator that yields new lines from the logfile as they come in."""
