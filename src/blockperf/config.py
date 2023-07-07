@@ -136,6 +136,9 @@ class AppConfig:
     def tracelogs_dir(self) -> str:
         return str(self.config_parser.get("DEFAULT", "tracelogs_dir", fallback=""))
 
+    @property
+    def topic(self) -> str:
+        return f"{self.topic_base}/{self.operator}/{self.relay_public_ip}"
     # def _read_config(self, config: ConfigParser):
     #    """ """
     #    # Try to check whether CN of cert matches given operator

@@ -15,7 +15,7 @@ import paho.mqtt.client as mqtt
 from blockperf import __version__ as blockperf_version
 from blockperf import logger_name
 from blockperf.config import AppConfig
-from blockperf.tracing import BlockTrace, TraceEvent, TraceEventKind
+from blockperf.sampling import BlockSample, LogLine, LogLineKind
 
 LOG = logging.getLogger(logger_name)
 
@@ -25,6 +25,8 @@ class App:
     app_config: AppConfig
     node_config: dict
     _mqtt_client: mqtt.Client
+
+    logevents = dict() # holds all logevents for each hash encountered
 
     def __init__(self, config: AppConfig) -> None:
         self.app_config = config
@@ -54,14 +56,16 @@ class App:
         """Run the App by creating the two threads and starting them."""
         self._check_already_running()
 
+        producer_thread = threading.Thread(target=self.produce_blocksamples, args=())
+        producer_thread.start()
+        LOG.info("Producer thread started")
+
         # consumer = BlocklogConsumer(queue=self.q, app_config=self.app_config)
-        consumer_thread = threading.Thread(target=self.consume_blocktrace, args=())
+        consumer_thread = threading.Thread(target=self.consume_blocksample, args=())
         consumer_thread.start()
         LOG.info("Consumer thread started")
 
-        producer_thread = threading.Thread(target=self.produce_blocktraces, args=())
-        producer_thread.start()
-        LOG.info("Producer thread started")
+
 
         # Blocks main thread until all joined threads are finished
         producer_thread.join()
@@ -89,9 +93,6 @@ class App:
                 keyfile=self.app_config.client_key,
             )
         return self._mqtt_client
-
-    def get_topic(self) -> str:
-        return f"{self.app_config.topic_base}/{self.app_config.operator}/{self.app_config.relay_public_ip}"
 
     def on_connect_callback(self, client, userdata, flags, reasonCode, properties) -> None:
         """Called when the broker responds to our connection request.
@@ -127,44 +128,41 @@ class App:
         """
         LOG.debug(f"MQTT: {level} - {buf}")
 
-    def consume_blocktrace(self):
+    def consume_blocksample(self):
         """Runs the Consumer thread. Will get called from Thread base once ready.
         If run() finishes, the thread will finish.
         """
-
         self.mqtt_client
         broker_url, broker_port = (
             self.app_config.mqtt_broker_url,
             self.app_config.mqtt_broker_port,
         )
-        LOG.debug(
-            f"Connecting to {broker_url}:{broker_port}"
-        )
-        self.mqtt_client.connect(broker_url, broker_port)
-        self.mqtt_client.loop_start()  # Starts thread for pahomqtt to process messages
-        # Sometimes the connect took a moment to settle. To not have
-        # the consumer accept messages (and not be able to publish)
-        # i decided to ensure the connection is established this way
-        while not self.mqtt_client.is_connected:
-            LOG.debug("Waiting for mqtt connection ... ")
-            time.sleep(0.5)  # Block until connected
-
         while True:
             try:
+                LOG.debug(
+                    f"Connecting to {broker_url}:{broker_port}"
+                )
+                self.mqtt_client.connect(broker_url, broker_port)
+                self.mqtt_client.loop_start()  # Starts thread for pahomqtt to process messages
+                # Sometimes the connect took a moment to settle. To not have
+                # the consumer accept messages (and not be able to publish)
+                # i decided to ensure the connection is established this way
+                while not self.mqtt_client.is_connected:
+                    LOG.debug("Waiting for mqtt connection ... ")
+                    time.sleep(0.5)  # Block until connected
                 LOG.debug(
                     f"Waiting for next item in queue, Current size: {self.q.qsize()}"
                 )
                 # The call to get() blocks until there is something in the queue
-                blocktrace = self.q.get()
-                sys.stdout.write(blocktrace.as_msg_string())
+                blocksample = self.q.get()
+                sys.stdout.write(blocksample.as_msg_string())
                 if self.q.qsize() > 0:
                     LOG.debug(f"{self.q.qsize()} left in queue")
-                payload = blocktrace.as_payload_dict()
+                payload = blocksample.as_payload_dict()
                 LOG.debug(payload)
-                topic = self.get_topic()
                 start_publish = timer()
                 message_info = self.mqtt_client.publish(
-                    topic=topic,
+                    topic=self.app_config.topic,
                     payload=json.dumps(payload, default=str)
                 )
                 # wait_for_publish blocks until timeout for the message to be published
@@ -172,7 +170,7 @@ class App:
                 end_publish = timer()
                 publish_time = end_publish - start_publish
                 LOG.info(
-                    f"Published {blocktrace.block_hash_short} with mid='{message_info.mid}' to {topic} in {publish_time}"
+                    f"Published {blocksample.block_hash_short} with mid='{message_info.mid}' to {self.app_config.topic} in {publish_time}"
                 )
                 if publish_time > 5.0:
                     LOG.warning("Publish time > 5.0")
@@ -180,57 +178,56 @@ class App:
                 print(e)
                 LOG.exception(e)
 
-    def produce_blocktraces(self):
+    def produce_blocksamples(self):
         adopting_block_kinds = (
-            TraceEventKind.ADDED_TO_CURRENT_CHAIN,
-            TraceEventKind.SWITCHED_TO_A_FORK,
+            LogLineKind.ADDED_TO_CURRENT_CHAIN,
+            LogLineKind.SWITCHED_TO_A_FORK,
         )
-        blocktraces = dict() #
         published_hashes = collections.deque()
-        for event in self.generate_log_events():
-            assert event.block_hash, f"Found a trace that has no hash {event}!"
-            if event.block_hash in published_hashes:
-                continue
-            assert event.block_hash not in published_hashes, f"Already published {event.block_hash}!"
-            LOG.debug(event)
+        for logline in self.generate_loglines():
+            _block_hash = logline.block_hash
+            assert _block_hash, f"Found a trace that has no hash {logline}!"
 
-            # Event is not yet published; If no list for given hash exists, create one
-            if not event.block_hash in blocktraces:
-                LOG.debug(f"Creating new list for {event.block_hash}. {len(blocktraces)}" )
-                blocktraces[event.block_hash] = list()
-            # Add event to list
-            blocktraces[event.block_hash].append(event)
+            # If the same hash has already been seen published, dont bother
+            # But that ac
+            if _block_hash in published_hashes:
+                continue
+            LOG.debug(logline)
+
+            if not _block_hash in logevents:
+                LOG.debug(f"Creating new list for {_block_hash}. {len(logevents)}" )
+                logevents[_block_hash] = list()
+            logevents[_block_hash].append(logline)
 
             # If the event is not yet adopting a block move on
-            if not event.kind in adopting_block_kinds:
+            if not logline.kind in adopting_block_kinds:
                 continue
 
-            assert event.kind in adopting_block_kinds, f"{event} is not adopting the block!"
             # Get all events for given hash and delete from list
-            events = blocktraces[event.block_hash]
-            bt = BlockTrace(events, self.app_config)
-
-            published_hashes.append(event.block_hash)
+            events = logevents[_block_hash]
+            sample = BlockSample(events, self.app_config)
+            published_hashes.append(_block_hash)
             LOG.info(f"Published hashes {len(published_hashes)} {published_hashes}")
-            self.q.put(bt)
+            # push smaple to consumer
+            self.q.put(sample)
 
-            if len(published_hashes) >= 4:
+            if len(published_hashes) >= 10:
                 # Remove from left; Latest 10 hashes published will be in deque
                 removed_hash = published_hashes.popleft()
-                # Delete that hash from all blocktraces
-                del blocktraces[removed_hash]
+                # Delete that hash from all logevents
+                del logevents[removed_hash]
                 LOG.info(f"Removed {removed_hash} from published_hashes")
 
-            LOG.info(f"Unpublished blocks: {len(blocktraces.keys())}; [{' '.join([ h[0:10] for h in blocktraces.keys()])}]")
+            LOG.info(f"Unpublished blocks: {len(logevents.keys())}; [{' '.join([ h[0:10] for h in logevents.keys()])}]")
             LOG.info(f"Published hashes {len(published_hashes)} {published_hashes}")
 
-    def generate_log_events(self):
+    def generate_loglines(self):
         """Generator that yields new lines from the logfile as they come in."""
         interesting_kinds = (
-            TraceEventKind.TRACE_DOWNLOADED_HEADER,
-            TraceEventKind.SEND_FETCH_REQUEST,
-            TraceEventKind.COMPLETED_BLOCK_FETCH,
-            TraceEventKind.ADDED_TO_CURRENT_CHAIN,
+            LogLineKind.TRACE_DOWNLOADED_HEADER,
+            LogLineKind.SEND_FETCH_REQUEST,
+            LogLineKind.COMPLETED_BLOCK_FETCH,
+            LogLineKind.ADDED_TO_CURRENT_CHAIN,
         )
         node_log = self.app_config.node_logdir.joinpath("node.json")
         if not node_log.exists():
@@ -245,17 +242,25 @@ class App:
                 LOG.debug(f"Opened {real_node_log}")
                 while same_file:
                     new_line = fp.readline()
+                    # if no new_line is returned from fp, check that the symlink
+                    # is still the same. If it is, wait 0.1 seconds and try again
+                    # If its is not set same_file to False to reopen the symlink
                     if not new_line:
                         if real_node_log.name != node_log.readlink().name:
                             LOG.debug(f"Symlink changed from {real_node_log.name} to {node_log.readlink()} ")
                             same_file = False
                         time.sleep(0.1)
                         continue
-                    # Create the event from the line
-                    event = TraceEvent.from_logline(new_line)
-                    if not event:
+
+                    # Parse the logline
+                    logline = LogLine.from_logline(new_line)
+                    if not logline:
                         continue
-                    if not int(event.at.timestamp()) > now_minus_x:
+                    if not int(logline.at.timestamp()) > now_minus_x:
                         continue
-                    if event.kind in interesting_kinds:
-                        yield (event)
+                    if not logline.kind in interesting_kinds:
+                        continue
+
+                    # We now know, there is a line, that is not too old and its
+                    # of a kind that we are interested in -> yield it!
+                    yield (logline)

@@ -22,8 +22,8 @@ network_starttime = {
 }
 
 
-class TraceEventKind(Enum):
-    """All events from the log file are of a specific kind."""
+class LogLineKind(Enum):
+    """All lines from the log file are of a specific kind."""
     TRACE_DOWNLOADED_HEADER = "ChainSyncClientEvent.TraceDownloadedHeader"
     SEND_FETCH_REQUEST = "SendFetchRequest"
     COMPLETED_BLOCK_FETCH = "CompletedBlockFetch"
@@ -32,8 +32,8 @@ class TraceEventKind(Enum):
     UNKNOWN = "Unknown"
 
 
-class TraceEvent:
-    """A TraceEvent represents a single trace line in the nodes log file.
+class LogLine:
+    """A LogLine represents a single line in the nodes log file.
 
     TraceDownloadedHeader
     A (new) Header was announced (downloaded) to the node. Emitted each time a
@@ -62,7 +62,7 @@ class TraceEvent:
     ns: str
 
     def __init__(self, event_data: dict) -> None:
-        """Create a TraceEvent with `from_logline` method by passing in the json string
+        """Create a LogLine with `from_logline` method by passing in the json string
         as written to the nodes log. I have implemented access to the individual fiels
         with properties to keep the knowledge of how that value is retrieved out of
         the logline in this class."""
@@ -93,16 +93,16 @@ class TraceEvent:
     @property
     def block_hash(self) -> str:
         block_hash = ""
-        if self.kind == TraceEventKind.SEND_FETCH_REQUEST:
+        if self.kind == LogLineKind.SEND_FETCH_REQUEST:
             block_hash = self.data.get("head", "")
         elif self.kind in (
-            TraceEventKind.COMPLETED_BLOCK_FETCH,
-            TraceEventKind.TRACE_DOWNLOADED_HEADER
+            LogLineKind.COMPLETED_BLOCK_FETCH,
+            LogLineKind.TRACE_DOWNLOADED_HEADER
         ):
             block_hash = self.data.get("block", "")
         elif self.kind in (
-            TraceEventKind.ADDED_TO_CURRENT_CHAIN,
-            TraceEventKind.SWITCHED_TO_A_FORK
+            LogLineKind.ADDED_TO_CURRENT_CHAIN,
+            LogLineKind.SWITCHED_TO_A_FORK
         ):
             newtip = self.data.get("newtip", "")
             block_hash = newtip.split("@")[0]
@@ -113,15 +113,15 @@ class TraceEvent:
         return str(block_hash)
 
     @property
-    def kind(self) -> TraceEventKind:
+    def kind(self) -> LogLineKind:
         if not hasattr(self, "_kind"):
             _value = self.data.get("kind")
-            for kind in TraceEventKind:
+            for kind in LogLineKind:
                 if _value == kind.value:
-                    self._kind = TraceEventKind(_value)
+                    self._kind = LogLineKind(_value)
                     break
             else:
-                self._kind = TraceEventKind(TraceEventKind.UNKNOWN)
+                self._kind = LogLineKind(LogLineKind.UNKNOWN)
         return self._kind
 
     @property
@@ -212,8 +212,8 @@ class TraceEvent:
         return _newtip
 
 
-class BlockTrace:
-    """BlockTrace represents all trace events for any given block hash.
+class BlockSample:
+    """BlockSample represents all trace events for any given block hash.
     It provides a unified interface to think about what happend with a
     specific block. When was its header first announced, when did it first
     completed downloading etc.
@@ -253,9 +253,6 @@ class BlockTrace:
     """
     tace_events = list()
     app_config: AppConfig
-    #_first_trace_header: TraceEvent
-    #_first_completed_block: TraceEvent
-    #_fetch_request_completed_block: TraceEvent
 
     def __init__(self, events, app_config: AppConfig) -> None:
         # Make sure they are order by their time
@@ -263,37 +260,34 @@ class BlockTrace:
         events.sort(key=lambda x: x.at)
         self.tace_events = events
 
-    #def __str__(self):
-    #    return f"<{__class__.__name__}>"
-
     @property
-    def first_trace_header(self) -> Union[TraceEvent, None]:
+    def first_trace_header(self) -> Union[LogLine, None]:
         """Returnms first TRACE_DOWNLOADED_HEADER received"""
         for event in self.tace_events:
-            if event.kind == TraceEventKind.TRACE_DOWNLOADED_HEADER:
+            if event.kind == LogLineKind.TRACE_DOWNLOADED_HEADER:
                 return event
         # That would be really odd to not find a TRACE_DOWNLOADED_HEADER
-        LOG.error(f"No first {TraceEventKind.TRACE_DOWNLOADED_HEADER} found for {self}")
+        LOG.error(f"No first {LogLineKind.TRACE_DOWNLOADED_HEADER} found for {self}")
         return None
 
     @property
-    def first_completed_block(self) -> Union[TraceEvent, None]:
+    def first_completed_block(self) -> Union[LogLine, None]:
         """Returns first COMPLETED_BLOCK_FETCH received"""
         for event in self.tace_events:
-            if event.kind == TraceEventKind.COMPLETED_BLOCK_FETCH:
+            if event.kind == LogLineKind.COMPLETED_BLOCK_FETCH:
                 return event
-        LOG.error(f"No first {TraceEventKind.COMPLETED_BLOCK_FETCH} found for {self}")
+        LOG.error(f"No first {LogLineKind.COMPLETED_BLOCK_FETCH} found for {self}")
         return None
 
     @property
-    def fetch_request_completed_block(self) -> Union[TraceEvent, None]:
+    def fetch_request_completed_block(self) -> Union[LogLine, None]:
         """Returns SEND_FETCH_REQUEST corresponding to the first COMPLETED_BLOCK_FETCH received"""
         if not (fcb := self.first_completed_block):
             return None
-        for event in filter(lambda x: x.kind == TraceEventKind.SEND_FETCH_REQUEST, self.tace_events):
+        for event in filter(lambda x: x.kind == LogLineKind.SEND_FETCH_REQUEST, self.tace_events):
             if (event.remote_addr == fcb.remote_addr and event.remote_port == fcb.remote_port):
                 return event
-        LOG.error(f"No {TraceEventKind.SEND_FETCH_REQUEST} found for {fcb}")
+        LOG.error(f"No {LogLineKind.SEND_FETCH_REQUEST} found for {fcb}")
         return None
 
     @property
@@ -403,12 +397,12 @@ class BlockTrace:
         return int(block_response_delta.total_seconds() * 1000)
 
     @property
-    def block_adopt(self) -> Union[TraceEvent, None]:
+    def block_adopt(self) -> Union[LogLine, None]:
         """Return TraceEvent that this block was adopted with"""
         for event in self.tace_events:
             if event.kind in (
-                TraceEventKind.ADDED_TO_CURRENT_CHAIN,
-                TraceEventKind.SWITCHED_TO_A_FORK
+                LogLineKind.ADDED_TO_CURRENT_CHAIN,
+                LogLineKind.SWITCHED_TO_A_FORK
             ):
                 return event
         LOG.error(f"{self.block_hash_short} has not been adopted!")
