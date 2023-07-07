@@ -253,9 +253,9 @@ class BlockTrace:
     """
     tace_events = list()
     app_config: AppConfig
-    _first_trace_header: TraceEvent
-    _first_completed_block: TraceEvent
-    _fetch_request_completed_block: TraceEvent
+    #_first_trace_header: TraceEvent
+    #_first_completed_block: TraceEvent
+    #_fetch_request_completed_block: TraceEvent
 
     def __init__(self, events, app_config: AppConfig) -> None:
         # Make sure they are order by their time
@@ -267,60 +267,60 @@ class BlockTrace:
     #    return f"<{__class__.__name__}>"
 
     @property
-    def first_trace_header(self) -> TraceEvent:
+    def first_trace_header(self) -> Union[TraceEvent, None]:
         """Returnms first TRACE_DOWNLOADED_HEADER received"""
-        if not hasattr(self, "_first_trace_header"):
-            for event in self.tace_events:
-                if event.kind == TraceEventKind.TRACE_DOWNLOADED_HEADER:
-                    self._first_trace_header = event
-                    break
-        assert self._first_trace_header, "Did not find first TRACE_DOWNLOADED_HEADER in events"
-        return self._first_trace_header
+        for event in self.tace_events:
+            if event.kind == TraceEventKind.TRACE_DOWNLOADED_HEADER:
+                return event
+        # That would be really odd to not find a TRACE_DOWNLOADED_HEADER
+        LOG.error(f"No first {TraceEventKind.TRACE_DOWNLOADED_HEADER} found for {self}")
+        return None
 
     @property
-    def first_completed_block(self) -> TraceEvent:
+    def first_completed_block(self) -> Union[TraceEvent, None]:
         """Returns first COMPLETED_BLOCK_FETCH received"""
-        if not hasattr(self, "_first_completed_block"):
-            for event in self.tace_events:
-                if event.kind == TraceEventKind.COMPLETED_BLOCK_FETCH:
-                    self._first_completed_block = event
-                    break
-        assert self._first_completed_block, "Did not find first COMPLETED_BLOCK_FETCH in events"
-        return self._first_completed_block
+        for event in self.tace_events:
+            if event.kind == TraceEventKind.COMPLETED_BLOCK_FETCH:
+                return event
+        LOG.error(f"No first {TraceEventKind.COMPLETED_BLOCK_FETCH} found for {self}")
+        return None
 
     @property
-    def fetch_request_completed_block(self) -> TraceEvent:
+    def fetch_request_completed_block(self) -> Union[TraceEvent, None]:
         """Returns SEND_FETCH_REQUEST corresponding to the first COMPLETED_BLOCK_FETCH received"""
-        if not hasattr(self, "_fetch_request_completed_block"):
-            for event in filter(lambda x: x.kind == TraceEventKind.SEND_FETCH_REQUEST, self.tace_events):
-                if (
-                    event.remote_addr == self.first_completed_block.remote_addr
-                    and
-                    event.remote_port == self.first_completed_block.remote_port
-                ):
-                    self._fetch_request_completed_block = event
-                    break
-            else:
-                LOG.error(f"{self} has not found a FetchRequest for {self.first_completed_block}")
-        return self._fetch_request_completed_block
+        if not (fcb := self.first_completed_block):
+            return None
+        for event in filter(lambda x: x.kind == TraceEventKind.SEND_FETCH_REQUEST, self.tace_events):
+            if (event.remote_addr == fcb.remote_addr and event.remote_port == fcb.remote_port):
+                return event
+        LOG.error(f"No {TraceEventKind.SEND_FETCH_REQUEST} found for {fcb}")
+        return None
 
     @property
-    def slot_num_delta(self) -> timedelta:
-        """Calculated the time betwenn when the given slot should have been,
-        versus the actual time is has been."""
-        return self.slot_num #- self.last_slot_num
+    def slot_num_delta(self) -> int:
+        """Slot delta in miliseconds
+
+        The time difference in miliseconds
+        """
+        return 0 # self.slot_num #- self.last_slot_num
 
     @property
     def header_remote_addr(self) -> str:
-        return self.first_trace_header.remote_addr
+        if not (fth := self.first_trace_header):
+            return ""
+        return fth.remote_addr
 
     @property
     def header_remote_port(self) -> str:
-        return self.first_trace_header.remote_port
+        if not (fth := self.first_trace_header):
+            return ""
+        return fth.remote_port
 
     @property
     def slot_num(self) -> int:
-        return self.first_trace_header.slot_num
+        if not (fth := self.first_trace_header):
+            return 0
+        return fth.slot_num
 
     @property
     def slot_time(self) -> datetime:
@@ -341,28 +341,40 @@ class BlockTrace:
         first header. When could this header be received vs when was
         it actually received.
         """
-        header_delta = self.first_trace_header.at - self.slot_time
+        if not (fth := self.first_trace_header):
+            return 0
+        header_delta = fth.at - self.slot_time
         return int(header_delta.total_seconds() * 1000)
 
     @property
     def block_num(self) -> int:
-        return self.first_trace_header.block_num
+        if not (fth := self.first_trace_header):
+            return 0
+        return fth.block_num
 
     @property
     def block_hash(self) -> str:
-        return self.first_trace_header.block_hash
+        if not (fth := self.first_trace_header):
+            return ""
+        return fth.block_hash
 
     @property
     def block_hash_short(self) -> str:
-        return self.block_hash[0:10]
+        if not (fth := self.first_trace_header):
+            return ""
+        return fth.block_hash[0:10]
 
     @property
     def block_size(self) -> int:
-        return self.first_completed_block.size
+        if not (fcb := self.first_completed_block):
+            return 0
+        return fcb.size
 
     @property
     def block_delay(self) -> float:
-        return self.first_completed_block.delay
+        if not (fcb := self.first_completed_block):
+            return 0.0
+        return fcb.delay
 
     @property
     def block_request_delta(self) -> int:
@@ -371,17 +383,23 @@ class BlockTrace:
         The time it took the node from seeing a block first (the header was
         received) to actually requesting that block.
         """
-        block_request_delta = self.fetch_request_completed_block.at - self.first_trace_header.at
+        frcb, fth = self.fetch_request_completed_block, self.first_trace_header
+        if not frcb or not fth:
+            return 0
+        block_request_delta = frcb.at - fth.at
         return int(block_request_delta.total_seconds() * 1000)
 
     @property
     def block_response_delta(self) -> int:
-        """Block response deltain miliseconds
+        """Block response delta in miliseconds
 
         The time it took to have completed the download of a given block
         after requesting it from a peer.
         """
-        block_response_delta = self.first_completed_block.at - self.fetch_request_completed_block.at
+        fcb, frcb = self.first_completed_block, self.fetch_request_completed_block
+        if not fcb or not frcb:
+            return 0
+        block_response_delta = fcb.at - frcb.at
         return int(block_response_delta.total_seconds() * 1000)
 
     @property
@@ -403,34 +421,43 @@ class BlockTrace:
         The time it took the node to successfully adopt a block after it
         has completed receiving it.
         """
-        block_adopt = self.block_adopt
-        if not block_adopt:
+        block_adopt, fcb = self.block_adopt, self.first_completed_block
+        if not block_adopt or not fcb:
             return 0
-
-        block_adopt_delta = self.block_adopt.at - self.first_completed_block.at
+        block_adopt_delta = block_adopt.at - fcb.at
         return int(block_adopt_delta.total_seconds() * 1000)
 
     @property
     def block_g(self) -> str:
-        return self.fetch_request_completed_block.deltaq_g
+        if not (frcb := self.fetch_request_completed_block):
+            return ""
+        return frcb.deltaq_g
 
     @property
     def block_remote_addr(self) -> str:
-        return self.first_completed_block.remote_addr
+        if not (fcb := self.first_completed_block):
+            return ""
+        return fcb.remote_addr
 
     @property
     def block_remote_port(self) -> str:
-        return self.first_completed_block.remote_port
+        if not (fcb := self.first_completed_block):
+            return ""
+        return fcb.remote_port
 
     @property
     def block_local_address(self) -> str:
         #return self.app_config.relay_public_ip
-        return self.first_completed_block.local_addr
+        if not (fcb := self.first_completed_block):
+            return ""
+        return fcb.local_addr
 
     @property
     def block_local_port(self) -> str:
         #return self.app_config.relay_public_port
-        return self.first_completed_block.local_port
+        if not (fcb := self.first_completed_block):
+            return ""
+        return fcb.local_port
 
 
     def as_msg_string(self):
@@ -453,10 +480,10 @@ class BlockTrace:
             f"Block:.... {self.block_num} ({self.block_hash_short})\n"
             f"Slot:..... {self.slot_num} ({self.slot_num_delta}s)\n"
             f".......... {self.slot_time}\n"  # Assuming this is the slot_time
-            f"Header ... {self.first_trace_header.at} ({self.header_delta}) from {self.header_remote_addr}:{self.header_remote_port}\n"
-            f"RequestX.. {self.fetch_request_completed_block.at} ({self.block_request_delta})\n"
-            f"Block..... {self.first_completed_block.at} ({self.block_response_delta}) from {self.block_remote_addr}:{self.block_remote_port}\n"
-            f"Adopted... {self.block_adopt.at} ({self.block_adopt_delta})\n"
+            f"Header ... {self.first_trace_header.at if self.first_trace_header else 'X'} ({self.header_delta}) from {self.header_remote_addr}:{self.header_remote_port}\n"
+            f"RequestX.. {self.fetch_request_completed_block.at if self.fetch_request_completed_block else 'X'} ({self.block_request_delta})\n"
+            f"Block..... {self.first_completed_block.at if self.first_completed_block else 'X'} ({self.block_response_delta}) from {self.block_remote_addr}:{self.block_remote_port}\n"
+            f"Adopted... {self.block_adopt.at if self.block_adopt else 'X'} ({self.block_adopt_delta})\n"
             f"Size...... {self.block_size} bytes\n"
             f"Delay..... {self.block_delay} sec\n\n"
         )

@@ -77,6 +77,7 @@ class App:
             self._mqtt_client.on_connect = self.on_connect_callback
             self._mqtt_client.on_disconnect = self.on_disconnect_callback
             self._mqtt_client.on_publish = self.on_publish_callback
+            self._mqtt_client.on_log = self.on_log
 
             # tls_set has an argument 'ca_certs'. I used to provide a file
             # whith one of the certificates from https://www.amazontrust.com/repository/
@@ -115,6 +116,17 @@ class App:
         pass
         # LOG.debug(f"Message {mid} published to broker")
 
+    def on_log(self, client, userdata, level, buf):
+        """
+        client:     the client instance for this callback
+        userdata:   the private user data as set in Client() or userdata_set()
+        level:      gives the severity of the message and will be one of
+                    MQTT_LOG_INFO, MQTT_LOG_NOTICE, MQTT_LOG_WARNING,
+                    MQTT_LOG_ERR, and MQTT_LOG_DEBUG.
+        buf:        the message itself
+        """
+        LOG.debug(f"MQTT: {level} - {buf}")
+
     def consume_blocktrace(self):
         """Runs the Consumer thread. Will get called from Thread base once ready.
         If run() finishes, the thread will finish.
@@ -144,6 +156,7 @@ class App:
                 )
                 # The call to get() blocks until there is something in the queue
                 blocktrace = self.q.get()
+                sys.stdout.write(blocktrace.as_msg_string())
                 if self.q.qsize() > 0:
                     LOG.debug(f"{self.q.qsize()} left in queue")
                 payload = blocktrace.as_payload_dict()
@@ -166,6 +179,50 @@ class App:
             except Exception as e:
                 print(e)
                 LOG.exception(e)
+
+    def produce_blocktraces(self):
+        adopting_block_kinds = (
+            TraceEventKind.ADDED_TO_CURRENT_CHAIN,
+            TraceEventKind.SWITCHED_TO_A_FORK,
+        )
+        blocktraces = dict() #
+        published_hashes = collections.deque()
+        for event in self.generate_log_events():
+            assert event.block_hash, f"Found a trace that has no hash {event}!"
+            if event.block_hash in published_hashes:
+                continue
+            assert event.block_hash not in published_hashes, f"Already published {event.block_hash}!"
+            LOG.debug(event)
+
+            # Event is not yet published; If no list for given hash exists, create one
+            if not event.block_hash in blocktraces:
+                LOG.debug(f"Creating new list for {event.block_hash}. {len(blocktraces)}" )
+                blocktraces[event.block_hash] = list()
+            # Add event to list
+            blocktraces[event.block_hash].append(event)
+
+            # If the event is not yet adopting a block move on
+            if not event.kind in adopting_block_kinds:
+                continue
+
+            assert event.kind in adopting_block_kinds, f"{event} is not adopting the block!"
+            # Get all events for given hash and delete from list
+            events = blocktraces[event.block_hash]
+            bt = BlockTrace(events, self.app_config)
+
+            published_hashes.append(event.block_hash)
+            LOG.info(f"Published hashes {len(published_hashes)} {published_hashes}")
+            self.q.put(bt)
+
+            if len(published_hashes) >= 4:
+                # Remove from left; Latest 10 hashes published will be in deque
+                removed_hash = published_hashes.popleft()
+                # Delete that hash from all blocktraces
+                del blocktraces[removed_hash]
+                LOG.info(f"Removed {removed_hash} from published_hashes")
+
+            LOG.info(f"Unpublished blocks: {len(blocktraces.keys())}; [{' '.join([ h[0:10] for h in blocktraces.keys()])}]")
+            LOG.info(f"Published hashes {len(published_hashes)} {published_hashes}")
 
     def generate_log_events(self):
         """Generator that yields new lines from the logfile as they come in."""
@@ -202,48 +259,3 @@ class App:
                         continue
                     if event.kind in interesting_kinds:
                         yield (event)
-
-    def produce_blocktraces(self):
-        adopting_block_kinds = (
-            TraceEventKind.ADDED_TO_CURRENT_CHAIN,
-            TraceEventKind.SWITCHED_TO_A_FORK,
-        )
-        blocktraces = dict() #
-        published_hashes = collections.deque()
-        for event in self.generate_log_events():
-            assert event.block_hash, f"Found a trace that has no hash {event}!"
-            if event.block_hash in published_hashes:
-                continue
-            assert event.block_hash not in published_hashes, f"Already published {event.block_hash}!"
-            LOG.debug(event)
-
-            # Event is not yet published; If no list for given hash exists, create one
-            if not event.block_hash in blocktraces:
-                LOG.debug(f"Creating new list for {event.block_hash}. {len(blocktraces)}" )
-                blocktraces[event.block_hash] = list()
-            # Add event to list
-            blocktraces[event.block_hash].append(event)
-
-            # If the event is not yet adopting a block move on
-            if not event.kind in adopting_block_kinds:
-                continue
-
-            assert event.kind in adopting_block_kinds, f"{event} is not adopting the block!"
-            # Get all events for given hash and delete from list
-            events = blocktraces[event.block_hash]
-            bt = BlockTrace(events, self.app_config)
-            sys.stdout.write(bt.as_msg_string())
-            published_hashes.append(event.block_hash)
-            LOG.info(f"Published hashes {len(published_hashes)} {published_hashes}")
-            self.q.put(bt)
-
-            if len(published_hashes) >= 4:
-                # Remove from left; Latest 10 hashes published will be in deque
-                removed_hash = published_hashes.popleft()
-                # Delete that hash from all blocktraces
-                del blocktraces[removed_hash]
-                LOG.info(f"Removed {removed_hash} from published_hashes")
-
-            LOG.info(f"Unpublished blocks: {len(blocktraces.keys())}; [{' '.join([ h[0:10] for h in blocktraces.keys()])}]")
-            LOG.info(f"Published hashes {len(published_hashes)} {published_hashes}")
-
