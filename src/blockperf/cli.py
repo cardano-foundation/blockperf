@@ -11,7 +11,7 @@ from blockperf.config import AppConfig
 
 logging.basicConfig(
     level=logging.DEBUG,
-    filename='/home/ubuntu/src/blockperf/blockperf.log',
+    filename='/opt/cardano/cnode/blockperf/blockperf.log',
     filemode='w',
     format="%(name)s %(threadName)s [%(asctime)s %(levelname)s] %(message)s",
     datefmt='%H:%M:%S'
@@ -24,20 +24,19 @@ LOG = logging.getLogger(logger_name)
 def main(verbose):
     """Blockperf.py - Cardano-network block performance measurement and analysis.
 
-    This script is based off of blockperf.sh which collects certain metrics from
-    the cardano-node and sends it to an aggregation services for further
-    analysis.
+    This script is based on blockperf.sh which collects data from the cardano-node
+    and sends it to an aggregation services for further analysis.
     """
     # dont print() but click.echo()
     click.echo("Main runs")
     pass
 
 
-@click.command("run", short_help="Runs blockperf with given configuration")
+@click.command("run", short_help="Runs blockperf")
 @click.argument(
-    "config_file_path", required=True, type=click.Path(resolve_path=True, exists=True)
+    "config_file_path", required=False, type=click.Path(resolve_path=True, exists=True)
 )
-def cmd_run(config_file_path):
+def cmd_run(config_file_path=None):
     """Run blockperf with given configuration"""
     try:
         LOG.info("Start blockperf")

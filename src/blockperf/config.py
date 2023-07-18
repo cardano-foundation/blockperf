@@ -2,10 +2,11 @@
 Why configparser? Because its simple. There is a blockperf.ini file in the
 contrib/ folder which has all options and a short explanation of what they do.
 """
-from pathlib import Path
-from configparser import ConfigParser
-import os
 import json
+import os
+from configparser import ConfigParser
+from pathlib import Path
+from typing import Union
 
 
 class ConfigError(Exception):
@@ -15,9 +16,10 @@ class ConfigError(Exception):
 class AppConfig:
     config_parser: ConfigParser
 
-    def __init__(self, config: Path):
+    def __init__(self, config: Union[Path, None]):
         self.config_parser = ConfigParser()
-        self.config_parser.read(config)
+        if config:
+            self.config_parser.read(config)
 
     # def validate_config(self):
     #    node_config_folder = node_config_path.parent
@@ -75,33 +77,48 @@ class AppConfig:
 
     @property
     def relay_public_ip(self) -> str:
-        relay_public_ip = self.config_parser.get("DEFAULT", "relay_public_ip")
+        relay_public_ip = os.getenv(
+            "BLOCKPERF_RELAY_PUBLIC_IP",
+            self.config_parser.get("DEFAULT", "relay_public_ip", fallback=None)
+        )
         if not relay_public_ip:
             raise ConfigError("'relay_public_ip' not set!")
         return relay_public_ip
 
     @property
     def relay_public_port(self) -> int:
-        relay_public_port = int(self.config_parser.get("DEFAULT", "relay_public_port", fallback=3001))
+        relay_public_port = int(os.getenv(
+            "BLOCKPERF_RELAY_PUBLIC_PORT",
+            self.config_parser.get("DEFAULT", "relay_public_port", fallback=3001)
+        ))
         return relay_public_port
 
     @property
     def client_cert(self) -> str:
-        client_cert = self.config_parser.get("DEFAULT", "client_cert")
+        client_cert = os.getenv(
+            "BLOCKPERF_CLIENT_CERT",
+            self.config_parser.get("DEFAULT", "client_cert", fallback=None)
+        )
         if not client_cert:
             raise ConfigError("No client_cert set")
         return client_cert
 
     @property
     def client_key(self) -> str:
-        client_key = self.config_parser.get("DEFAULT", "client_key")
+        client_key = os.getenv(
+            "BLOCKPERF_CLIENT_KEY",
+            self.config_parser.get("DEFAULT", "client_key", fallback=None)
+        )
         if not client_key:
             raise ConfigError("No client_key set")
         return client_key
 
     @property
     def operator(self) -> str:
-        operator = self.config_parser.get("DEFAULT", "operator")
+        operator = os.getenv(
+            "BLOCKPERF_OPERATOR",
+            self.config_parser.get("DEFAULT", "operator", fallback=None)
+        )
         if not operator:
             raise ConfigError("No operator set")
         return operator
@@ -112,21 +129,31 @@ class AppConfig:
 
     @property
     def topic_base(self) -> str:
-        return self.config_parser.get("DEFAULT", "topic_base", fallback="develop")
+        topic_base = os.getenv(
+            "BLOCKPERF_TOPIC_BASE",
+            self.config_parser.get("DEFAULT", "topic_base", fallback="develop")
+        )
+        return topic_base
 
     @property
     def mqtt_broker_url(self) -> str:
-        return str(
+        broker_url = os.getenv(
+            "BLOCKPERF_BROKER_URL",
             self.config_parser.get(
                 "DEFAULT",
                 "mqtt_broker_url",
                 fallback="a12j2zhynbsgdv-ats.iot.eu-central-1.amazonaws.com",
             )
         )
+        return broker_url
 
     @property
     def mqtt_broker_port(self) -> int:
-        return int(self.config_parser.get("DEFAULT", "mqtt_broker_port", fallback=8883))
+        broker_port = int(os.getenv(
+            "BLOCKPERF_BROKER_PORT",
+            self.config_parser.get("DEFAULT", "mqtt_broker_port", fallback=8883)
+        ))
+        return broker_port
 
     @property
     def enable_tracelogs(self) -> bool:
