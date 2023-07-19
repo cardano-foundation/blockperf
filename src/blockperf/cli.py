@@ -11,7 +11,7 @@ from blockperf.config import AppConfig
 
 logging.basicConfig(
     level=logging.DEBUG,
-    filename='/opt/cardano/cnode/blockperf/blockperf.log',
+    filename='/opt/cardano/blockperf/blockperf.log',
     filemode='w',
     format="%(name)s %(threadName)s [%(asctime)s %(levelname)s] %(message)s",
     datefmt='%H:%M:%S'
