@@ -1,30 +1,32 @@
-# Cardano blockPerf in python
+# Cardano blockberf
 
-## Installation
+Cardano blockperf is a tool that measures block propagation times in the network
+as seen from the local node. It will read the cardano-node's logs and determine
+timings of the blocks that are produced and distributed in the network.
 
-* Clone repositoy into /opt/cardano/cnode/blockperf and run the install.sh script.
+The data created from the logs will be sent to an MQTT Broker and collected for
+further analysis. The Broker currently runs on AWS' IoT Core Platform.
 
-```
-cd /opt/cardano/cnode
+## Installation/Usage
+
+* Clone repositoy, create virtualenv and install
+
+```bash
+mkdir -p /opt/blockperf
+cd opt/blockperf
 git clone git@github.com:cardano-foundation/blockperf.git
 
 # cd into that directory and run the install script
 cd blockperf
-./install.sh
+python -m venv venv
+source venv/bin/activate
+pip install .
 ```
 
-This will create a virtual environment in `/opt/cardano/cnode/blockperf/venv`.
-
-* Create a configuration file
-
-In the contrib folder is a blockperf.ini example file. Use that file as base
-for your own configuration. E.g. copy that file to `/opt/cardano/cnode/blockperf/blockperf.ini`.
-In the file are some explanations for what each settings does.
-
-* Create the service
-
-In the contrib folder is a blockperf.service example file. Copy it over
-to the /etc/systemd/system folder and enable the service.
+This will create a virtual environment in `venv/`and install blockperf in it.
+You will need to activate the environment everytime you want to work with
+blockperf. See docs if you are new to virtual environments:
+https://docs.python.org/3/tutorial/venv.html
 
 
 ## Configuration

@@ -115,45 +115,43 @@ class App:
             self.app_config.mqtt_broker_port,
         )
         while True:
-            try:
-                LOG.debug(
-                    f"Connecting to {broker_url}:{broker_port}"
+            LOG.debug(
+                f"Connecting to {broker_url}:{broker_port}"
+            )
+            self.mqtt_client.connect(broker_url, broker_port)
+            self.mqtt_client.loop_start()  # Starts thread for pahomqtt to process messages
+            # Sometimes the connect took a moment to settle. To not have
+            # the consumer accept messages (and not be able to publish)
+            # i decided to ensure the connection is established this way
+            while not self.mqtt_client.is_connected:
+                LOG.debug("Waiting for mqtt connection ... ")
+                time.sleep(0.5)  # Block until connected
+            LOG.debug(
+                f"Waiting for next item in queue, Current size: {self.q.qsize()}"
+            )
+            # The call to get() blocks until there is something in the queue
+            blocksample = self.q.get()
+            LOG.info("\n" + blocksample.as_msg_string())
+            if self.q.qsize() > 0:
+                LOG.debug(f"{self.q.qsize()} left in queue")
+            payload = blocksample.as_payload_dict()
+            LOG.debug(payload)
+            start_publish = timer()
+            message_info = self.mqtt_client.publish(
+                topic=self.app_config.topic,
+                payload=json.dumps(payload, default=str)
+            )
+            # wait_for_publish blocks until timeout for the message to be published
+            message_info.wait_for_publish(5)
+            end_publish = timer()
+            publish_time = end_publish - start_publish
+            if self.app_config.verbose:
+                LOG.info(
+                    f"Published {blocksample.block_hash_short} with mid='{message_info.mid}' to {self.app_config.topic} in {publish_time}"
                 )
-                self.mqtt_client.connect(broker_url, broker_port)
-                self.mqtt_client.loop_start()  # Starts thread for pahomqtt to process messages
-                # Sometimes the connect took a moment to settle. To not have
-                # the consumer accept messages (and not be able to publish)
-                # i decided to ensure the connection is established this way
-                while not self.mqtt_client.is_connected:
-                    LOG.debug("Waiting for mqtt connection ... ")
-                    time.sleep(0.5)  # Block until connected
-                LOG.debug(
-                    f"Waiting for next item in queue, Current size: {self.q.qsize()}"
-                )
-                # The call to get() blocks until there is something in the queue
-                blocksample = self.q.get()
-                LOG.info("\n" + blocksample.as_msg_string())
-                if self.q.qsize() > 0:
-                    LOG.debug(f"{self.q.qsize()} left in queue")
-                payload = blocksample.as_payload_dict()
-                LOG.debug(payload)
-                start_publish = timer()
-                message_info = self.mqtt_client.publish(
-                    topic=self.app_config.topic,
-                    payload=json.dumps(payload, default=str)
-                )
-                # wait_for_publish blocks until timeout for the message to be published
-                message_info.wait_for_publish(5)
-                end_publish = timer()
-                publish_time = end_publish - start_publish
-                if self.app_config.verbose:
-                    LOG.info(
-                        f"Published {blocksample.block_hash_short} with mid='{message_info.mid}' to {self.app_config.topic} in {publish_time}"
-                    )
-                if publish_time > 5.0:
-                    LOG.warning("Publish time > 5.0")
-            except Exception as e:
-                LOG.exception(e)
+            if publish_time > 5.0:
+                LOG.warning("Publish time > 5.0")
+
 
     def add_logline(self, _hash, logline) -> None:
         """Add given logline to the list indentified by _hash
@@ -163,7 +161,7 @@ class App:
             self.logevents[_hash] = list()
         self.logevents[_hash].append(logline)
 
-    def send_blocksample(self, _hash):
+    def blocksample(self, _hash):
         """Create BlockSample for given _hash from the list of all lines for it
         Then pass that BlockSample to the queue to have the consumer publish it"""
         events = self.logevents[_hash]
@@ -183,7 +181,7 @@ class App:
         LOG.debug(f"Published hashes {len(self.published_hashes)} {self.published_hashes}")
 
     def produce_blocksamples(self):
-        """Producer thread that """
+        """Producer thread that reads the logfile and sends blocksamples to the queue (not mqtt!) """
         adopting_block_kinds = (
             LogLineKind.ADDED_TO_CURRENT_CHAIN,
             LogLineKind.SWITCHED_TO_A_FORK,
@@ -198,7 +196,7 @@ class App:
             LOG.debug(logline)
             self.add_logline(_block_hash, logline)
             if logline.kind in adopting_block_kinds:
-                self.send_blocksample(_block_hash)
+                self.blocksample(_block_hash)
 
     def generate_loglines(self):
         """Generator that yields new lines from the logfile as they come in."""

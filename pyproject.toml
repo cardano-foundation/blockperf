@@ -50,6 +50,7 @@ classifiers = [  # Optional
 dependencies = [ # Optional
   "click",
   "paho-mqtt==1.6.1",
+  "psutil"
   # "cryptography"
 ]
 
