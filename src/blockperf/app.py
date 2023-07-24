@@ -1,4 +1,4 @@
-import fcntl
+
 import collections
 import json
 import logging
@@ -30,43 +30,19 @@ class App:
     published_hashes = collections.deque()
 
     def __init__(self, config: AppConfig) -> None:
-        self.app_config = config
         self.q = queue.Queue(maxsize=20)
-        LOG.debug("App init finished")
-
-    def _check_already_running(self) -> None:
-        """Checks if an instance is already running, exitst if it does!
-        Will not work on windows since fcntl is unavailable there!!
-        """
-        lock_file = self.app_config.lock_file
-        lock_file_fp = open(lock_file, "a")
-        try:
-            # Try to get exclusive lock on lockfile
-            fcntl.lockf(lock_file_fp, fcntl.LOCK_EX | fcntl.LOCK_NB)
-            lock_file_fp.seek(0)
-            lock_file_fp.truncate()
-            lock_file_fp.write(str(os.getpid()))
-            lock_file_fp.flush()
-            # Could acquire lock, do nothing and go on
-        except (IOError, BlockingIOError):
-            # Could not acquire lock, maybe implement some --force/--ignore flag
-            # that would delete and recreate the file?
-            sys.exit(f"Could not acquire exclusive lock on {lock_file}")
+        self.app_config = config
 
     def run(self):
         """Run the App by creating the two threads and starting them."""
-        self._check_already_running()
-
         producer_thread = threading.Thread(target=self.produce_blocksamples, args=())
         producer_thread.start()
-        LOG.info("Producer thread started")
+        # LOG.info("Producer thread started")
 
         # consumer = BlocklogConsumer(queue=self.q, app_config=self.app_config)
         consumer_thread = threading.Thread(target=self.consume_blocksample, args=())
         consumer_thread.start()
-        LOG.info("Consumer thread started")
-
-
+        # LOG.info("Consumer thread started")
 
         # Blocks main thread until all joined threads are finished
         producer_thread.join()
@@ -156,7 +132,7 @@ class App:
                 )
                 # The call to get() blocks until there is something in the queue
                 blocksample = self.q.get()
-                sys.stdout.write(blocksample.as_msg_string())
+                LOG.info("\n" + blocksample.as_msg_string())
                 if self.q.qsize() > 0:
                     LOG.debug(f"{self.q.qsize()} left in queue")
                 payload = blocksample.as_payload_dict()
@@ -170,13 +146,13 @@ class App:
                 message_info.wait_for_publish(5)
                 end_publish = timer()
                 publish_time = end_publish - start_publish
-                LOG.info(
-                    f"Published {blocksample.block_hash_short} with mid='{message_info.mid}' to {self.app_config.topic} in {publish_time}"
-                )
+                if self.app_config.verbose:
+                    LOG.info(
+                        f"Published {blocksample.block_hash_short} with mid='{message_info.mid}' to {self.app_config.topic} in {publish_time}"
+                    )
                 if publish_time > 5.0:
                     LOG.warning("Publish time > 5.0")
             except Exception as e:
-                print(e)
                 LOG.exception(e)
 
     def add_logline(self, _hash, logline) -> None:
@@ -193,7 +169,7 @@ class App:
         events = self.logevents[_hash]
         sample = BlockSample(events, self.app_config)
         self.published_hashes.append(_hash)
-        LOG.info(f"Published hashes {len(self.published_hashes)} {self.published_hashes}")
+        LOG.debug(f"Published hashes {len(self.published_hashes)} {self.published_hashes}")
         # push smaple to consumer
         self.q.put(sample)
         if len(self.published_hashes) >= 10:
@@ -201,9 +177,10 @@ class App:
             removed_hash = self.published_hashes.popleft()
             # Delete that hash from all logevents
             del self.logevents[removed_hash]
-            LOG.info(f"Removed {removed_hash} from published_hashes")
-        LOG.info(f"Unpublished blocks: {len(self.logevents.keys())}; [{' '.join([ h[0:10] for h in self.logevents.keys()])}]")
-        LOG.info(f"Published hashes {len(self.published_hashes)} {self.published_hashes}")
+            LOG.debug(f"Removed {removed_hash} from published_hashes")
+
+        LOG.debug(f"Unpublished blocks: {len(self.logevents.keys())}; [{' '.join([ h[0:10] for h in self.logevents.keys()])}]")
+        LOG.debug(f"Published hashes {len(self.published_hashes)} {self.published_hashes}")
 
     def produce_blocksamples(self):
         """Producer thread that """

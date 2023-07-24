@@ -16,20 +16,11 @@ class ConfigError(Exception):
 class AppConfig:
     config_parser: ConfigParser
 
-    def __init__(self, config: Union[Path, None]):
+    def __init__(self, config_file: Union[Path, None], verbose=False):
         self.config_parser = ConfigParser()
-        if config:
-            self.config_parser.read(config)
-
-    # def validate_config(self):
-    #    node_config_folder = node_config_path.parent
-    #    if not node_config_path.exists():
-    #        sys.exit(f"Node config not found {node_config_path}!")
-    #    self.node_config = json.loads(node_config_path.read_text())
-
-    #@property
-    #def _node_config_file(self) -> Path:
-    #    return node_config
+        if config_file:
+            self.config_parser.read(config_file)
+        self.verbose = verbose
 
     @property
     def node_config_file(self) -> Path:
@@ -64,6 +55,16 @@ class AppConfig:
                 return _node_logdir
         else:
             raise ConfigError(f"Could not determine node logdir")
+
+    @property
+    def blockperf_logfile(self) -> Union[Path, None]:
+        blockperf_logfile = os.getenv(
+            "BLOCKPERF_LOGFILE",
+            self.config_parser.get("DEFAULT", "blockperf_logfile", fallback=None)
+        )
+        if blockperf_logfile:
+            return Path(blockperf_logfile)
+        return None
 
     @property
     def network_magic(self) -> int:
@@ -122,10 +123,6 @@ class AppConfig:
         if not operator:
             raise ConfigError("No operator set")
         return operator
-
-    @property
-    def lock_file(self) -> str:
-        return self.config_parser.get("DEFAULT", "lock_file", fallback="/tmp/blockperf.lock")
 
     @property
     def topic_base(self) -> str:
