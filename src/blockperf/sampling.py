@@ -22,8 +22,9 @@ network_starttime = {
 }
 
 
-class LogLineKind(Enum):
-    """All lines from the log file are of a specific kind."""
+class LogEventKind(Enum):
+    """All events from the log file are of a specific kind."""
+
     TRACE_DOWNLOADED_HEADER = "ChainSyncClientEvent.TraceDownloadedHeader"
     SEND_FETCH_REQUEST = "SendFetchRequest"
     COMPLETED_BLOCK_FETCH = "CompletedBlockFetch"
@@ -32,8 +33,8 @@ class LogLineKind(Enum):
     UNKNOWN = "Unknown"
 
 
-class LogLine:
-    """A LogLine represents a single line in the nodes log file.
+class LogEvent:
+    """A LogEvent represents a single line in the nodes log file.
 
     TraceDownloadedHeader
     A (new) Header was announced (downloaded) to the node. Emitted each time a
@@ -56,17 +57,18 @@ class LogLine:
     SwitchedToAFork
     The node switched to a (new) Fork.
     """
+
     at: datetime
     data: dict
     env: str
     ns: str
 
     def __init__(self, event_data: dict) -> None:
-        """Create a LogLine with `from_logline` method by passing in the json string
-        as written to the nodes log. I have implemented access to the individual fiels
-        with properties to keep the knowledge of how that value is retrieved out of
-        the logline in this class."""
-        self.at = datetime.strptime(event_data.get("at", None), "%Y-%m-%dT%H:%M:%S.%f%z")
+        """Create a LogEvent with `from_logline` method by passing in the json string
+        as written to the nodes log."""
+        self.at = datetime.strptime(
+            event_data.get("at", None), "%Y-%m-%dT%H:%M:%S.%f%z"
+        )
         self.data = event_data.get("data", {})
         if not self.data:
             LOG.error(f"{self} has not data")
@@ -78,11 +80,11 @@ class LogLine:
         trace_kind = self.kind.value
         if "." in trace_kind:
             trace_kind = trace_kind.split(".")[1]
-        return f"<{__class__.__name__} {self.block_hash[0:10]} {self.at.strftime('%H:%M:%S.%f3')} {trace_kind} >"
+        return f"{trace_kind} {self.block_hash_short} {self.at.strftime('%H:%M:%S.%f')[:-3]}>"
 
     @classmethod
     def from_logline(cls, logline: str):
-        """Takes a single line from the logs and creates a """
+        """Takes a single line from the logs and creates a"""
         try:
             _json_data = json.loads(logline)
             return cls(_json_data)
@@ -93,16 +95,16 @@ class LogLine:
     @property
     def block_hash(self) -> str:
         block_hash = ""
-        if self.kind == LogLineKind.SEND_FETCH_REQUEST:
+        if self.kind == LogEventKind.SEND_FETCH_REQUEST:
             block_hash = self.data.get("head", "")
         elif self.kind in (
-            LogLineKind.COMPLETED_BLOCK_FETCH,
-            LogLineKind.TRACE_DOWNLOADED_HEADER
+            LogEventKind.COMPLETED_BLOCK_FETCH,
+            LogEventKind.TRACE_DOWNLOADED_HEADER,
         ):
             block_hash = self.data.get("block", "")
         elif self.kind in (
-            LogLineKind.ADDED_TO_CURRENT_CHAIN,
-            LogLineKind.SWITCHED_TO_A_FORK
+            LogEventKind.ADDED_TO_CURRENT_CHAIN,
+            LogEventKind.SWITCHED_TO_A_FORK,
         ):
             newtip = self.data.get("newtip", "")
             block_hash = newtip.split("@")[0]
@@ -113,15 +115,24 @@ class LogLine:
         return str(block_hash)
 
     @property
-    def kind(self) -> LogLineKind:
+    def block_hash_short(self) -> str:
+        return self.block_hash[0:10]
+
+    @property
+    def atstr(self) -> str:
+        """Returns at as formatted string"""
+        return self.at.strftime("%Y-%m-%d %H:%M:%S,%f")[:-3]
+
+    @property
+    def kind(self) -> LogEventKind:
         if not hasattr(self, "_kind"):
             _value = self.data.get("kind")
-            for kind in LogLineKind:
+            for kind in LogEventKind:
                 if _value == kind.value:
-                    self._kind = LogLineKind(_value)
+                    self._kind = LogEventKind(_value)
                     break
             else:
-                self._kind = LogLineKind(LogLineKind.UNKNOWN)
+                self._kind = LogEventKind(LogEventKind.UNKNOWN)
         return self._kind
 
     @property
@@ -168,10 +179,10 @@ class LogLine:
 
     @property
     def slot_num(self) -> int:
-         _slot_num = self.data.get("slot", 0)
-         if not _slot_num:
-             LOG.error(f"{self} has no slot_num {_slot_num} {self.data}")
-         return _slot_num
+        _slot_num = self.data.get("slot", 0)
+        if not _slot_num:
+            LOG.error(f"{self} has no slot_num {_slot_num} {self.data}")
+        return _slot_num
 
     @property
     def block_num(self) -> int:
@@ -182,7 +193,9 @@ class LogLine:
         _blockNo = self.data.get("blockNo", 0)
         if type(_blockNo) is dict:
             # If its a dict, it must have unBlockNo key
-            assert "unBlockNo" in _blockNo, "blockNo is a dict but does not have unBlockNo"
+            assert (
+                "unBlockNo" in _blockNo
+            ), "blockNo is a dict but does not have unBlockNo"
             _blockNo = _blockNo.get("unBlockNo", 0)
         if not _blockNo:
             LOG.error(f"{self} has no block_num")
@@ -248,9 +261,8 @@ class BlockSample:
         * blockLocalPort      # Taken from blockperf config
         * blockG              # Find FetchRequest for first CompletedBlock (remote addr/port match)
                               # Take deltaq.G from that FetchRequest
-
-
     """
+
     tace_events = list()
     app_config: AppConfig
 
@@ -261,33 +273,38 @@ class BlockSample:
         self.tace_events = events
 
     @property
-    def first_trace_header(self) -> Union[LogLine, None]:
+    def first_trace_header(self) -> Union[LogEvent, None]:
         """Returnms first TRACE_DOWNLOADED_HEADER received"""
         for event in self.tace_events:
-            if event.kind == LogLineKind.TRACE_DOWNLOADED_HEADER:
+            if event.kind == LogEventKind.TRACE_DOWNLOADED_HEADER:
                 return event
         # That would be really odd to not find a TRACE_DOWNLOADED_HEADER
-        LOG.error(f"No first {LogLineKind.TRACE_DOWNLOADED_HEADER} found for {self}")
+        LOG.error(f"No first {LogEventKind.TRACE_DOWNLOADED_HEADER} found for {self}")
         return None
 
     @property
-    def first_completed_block(self) -> Union[LogLine, None]:
+    def first_completed_block(self) -> Union[LogEvent, None]:
         """Returns first COMPLETED_BLOCK_FETCH received"""
         for event in self.tace_events:
-            if event.kind == LogLineKind.COMPLETED_BLOCK_FETCH:
+            if event.kind == LogEventKind.COMPLETED_BLOCK_FETCH:
                 return event
-        LOG.error(f"No first {LogLineKind.COMPLETED_BLOCK_FETCH} found for {self}")
+        LOG.error(f"No first {LogEventKind.COMPLETED_BLOCK_FETCH} found for {self}")
         return None
 
     @property
-    def fetch_request_completed_block(self) -> Union[LogLine, None]:
+    def fetch_request_completed_block(self) -> Union[LogEvent, None]:
         """Returns SEND_FETCH_REQUEST corresponding to the first COMPLETED_BLOCK_FETCH received"""
         if not (fcb := self.first_completed_block):
             return None
-        for event in filter(lambda x: x.kind == LogLineKind.SEND_FETCH_REQUEST, self.tace_events):
-            if (event.remote_addr == fcb.remote_addr and event.remote_port == fcb.remote_port):
+        for event in filter(
+            lambda x: x.kind == LogEventKind.SEND_FETCH_REQUEST, self.tace_events
+        ):
+            if (
+                event.remote_addr == fcb.remote_addr
+                and event.remote_port == fcb.remote_port
+            ):
                 return event
-        LOG.error(f"No {LogLineKind.SEND_FETCH_REQUEST} found for {fcb}")
+        LOG.error(f"No {LogEventKind.SEND_FETCH_REQUEST} found for {fcb}")
         return None
 
     @property
@@ -296,7 +313,7 @@ class BlockSample:
 
         The time difference in miliseconds
         """
-        return 0 # self.slot_num #- self.last_slot_num
+        return 0  # self.slot_num #- self.last_slot_num
 
     @property
     def header_remote_addr(self) -> str:
@@ -356,7 +373,7 @@ class BlockSample:
     def block_hash_short(self) -> str:
         if not (fth := self.first_trace_header):
             return ""
-        return fth.block_hash[0:10]
+        return fth.block_hash_short
 
     @property
     def block_size(self) -> int:
@@ -397,12 +414,12 @@ class BlockSample:
         return int(block_response_delta.total_seconds() * 1000)
 
     @property
-    def block_adopt(self) -> Union[LogLine, None]:
+    def block_adopt(self) -> Union[LogEvent, None]:
         """Return TraceEvent that this block was adopted with"""
         for event in self.tace_events:
             if event.kind in (
-                LogLineKind.ADDED_TO_CURRENT_CHAIN,
-                LogLineKind.SWITCHED_TO_A_FORK
+                LogEventKind.ADDED_TO_CURRENT_CHAIN,
+                LogEventKind.SWITCHED_TO_A_FORK,
             ):
                 return event
         LOG.error(f"{self.block_hash_short} has not been adopted!")
@@ -441,67 +458,12 @@ class BlockSample:
 
     @property
     def block_local_address(self) -> str:
-        #return self.app_config.relay_public_ip
         if not (fcb := self.first_completed_block):
             return ""
         return fcb.local_addr
 
     @property
     def block_local_port(self) -> str:
-        #return self.app_config.relay_public_port
         if not (fcb := self.first_completed_block):
             return ""
         return fcb.local_port
-
-
-    def as_msg_string(self):
-        """
-        The Goal is to print a messages like this per BlockPerf
-
-        Block:.... 792747 ( f581876904 ...)
-        Slot..... 24845021 (4s)
-        ......... 2023-05-23 13:23:41
-        Header... 2023-04-03 13:23:41,170 (+170 ms) from 207.180.196.63:3001
-        RequestX. 2023-04-03 13:23:41,170 (+0 ms)
-        Block.... 2023-04-03 13:23:41,190 (+20 ms) from 207.180.196.63:3001
-        Adopted.. 2023-04-03 13:23:41,190 (+0 ms)
-        Size..... 870 bytes
-        delay.... 0.192301717 sec
-        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-        """
-        # ? blockSlot-slotHeightPrev -> Delta between this slot and the last one that had a block?
-        msg = (
-            f"Block:.... {self.block_num} ({self.block_hash_short})\n"
-            f"Slot:..... {self.slot_num} ({self.slot_num_delta}s)\n"
-            f".......... {self.slot_time}\n"  # Assuming this is the slot_time
-            f"Header ... {self.first_trace_header.at if self.first_trace_header else 'X'} ({self.header_delta}) from {self.header_remote_addr}:{self.header_remote_port}\n"
-            f"RequestX.. {self.fetch_request_completed_block.at if self.fetch_request_completed_block else 'X'} ({self.block_request_delta})\n"
-            f"Block..... {self.first_completed_block.at if self.first_completed_block else 'X'} ({self.block_response_delta}) from {self.block_remote_addr}:{self.block_remote_port}\n"
-            f"Adopted... {self.block_adopt.at if self.block_adopt else 'X'} ({self.block_adopt_delta})\n"
-            f"Size...... {self.block_size} bytes\n"
-            f"Delay..... {self.block_delay} sec\n\n"
-        )
-        return msg
-
-    def as_payload_dict(self):
-        """Return the data as a dict suitable to be sent to mqtt"""
-        message = {
-            "magic": str(self.app_config.network_magic),
-            "bpVersion": f"v{blockperf_version}",
-            "blockNo": str(self.block_num),
-            "slotNo": str(self.slot_num),
-            "blockHash": str(self.block_hash),
-            "blockSize": str(self.block_size),
-            "headerRemoteAddr": str(self.header_remote_addr),
-            "headerRemotePort": str(self.header_remote_port),
-            "headerDelta": str(self.header_delta),
-            "blockReqDelta": str(self.block_request_delta),
-            "blockRspDelta": str(self.block_response_delta),
-            "blockAdoptDelta": str(self.block_adopt_delta),
-            "blockRemoteAddress": str(self.block_remote_addr),
-            "blockRemotePort": str(self.block_remote_port),
-            "blockLocalAddress": str(self.block_local_address),
-            "blockLocalPort": str(self.block_local_port),
-            "blockG": str(self.block_g),
-        }
-        return message

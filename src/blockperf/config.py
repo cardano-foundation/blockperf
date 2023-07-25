@@ -30,7 +30,7 @@ class AppConfig:
                 "DEFAULT",
                 "node_config",
                 fallback="/opt/cardano/cnode/files/config.json",
-            )
+            ),
         )
         node_config = Path(node_config_file)
         if not node_config.exists():
@@ -41,6 +41,18 @@ class AppConfig:
     def node_config(self) -> dict:
         """Return Path to config.json file from env var, ini file or builtin default"""
         return json.loads(self.node_config_file.read_text())
+
+    @property
+    def max_event_age(self) -> int:
+        """Maximum age of events in logfile to be considered in seconds"""
+        max_event_age = int(os.getenv("BLOCKPERF_MAX_EVENT_AGE", 60))
+        return max_event_age
+
+    @property
+    def mqtt_publish_timeout(self) -> int:
+        """Timeout for publishing new blockperfs to broker"""
+        mqtt_publish_timeout = int(os.getenv("BLOCKPERF_MQTT_PUBLISH_TIMEOUT", 5))
+        return mqtt_publish_timeout
 
     @property
     def node_configdir(self) -> Path:
@@ -60,7 +72,7 @@ class AppConfig:
     def blockperf_logfile(self) -> Union[Path, None]:
         blockperf_logfile = os.getenv(
             "BLOCKPERF_LOGFILE",
-            self.config_parser.get("DEFAULT", "blockperf_logfile", fallback=None)
+            self.config_parser.get("DEFAULT", "blockperf_logfile", fallback=None),
         )
         if blockperf_logfile:
             return Path(blockperf_logfile)
@@ -80,7 +92,7 @@ class AppConfig:
     def relay_public_ip(self) -> str:
         relay_public_ip = os.getenv(
             "BLOCKPERF_RELAY_PUBLIC_IP",
-            self.config_parser.get("DEFAULT", "relay_public_ip", fallback=None)
+            self.config_parser.get("DEFAULT", "relay_public_ip", fallback=None),
         )
         if not relay_public_ip:
             raise ConfigError("'relay_public_ip' not set!")
@@ -88,17 +100,19 @@ class AppConfig:
 
     @property
     def relay_public_port(self) -> int:
-        relay_public_port = int(os.getenv(
-            "BLOCKPERF_RELAY_PUBLIC_PORT",
-            self.config_parser.get("DEFAULT", "relay_public_port", fallback=3001)
-        ))
+        relay_public_port = int(
+            os.getenv(
+                "BLOCKPERF_RELAY_PUBLIC_PORT",
+                self.config_parser.get("DEFAULT", "relay_public_port", fallback=3001),
+            )
+        )
         return relay_public_port
 
     @property
     def client_cert(self) -> str:
         client_cert = os.getenv(
             "BLOCKPERF_CLIENT_CERT",
-            self.config_parser.get("DEFAULT", "client_cert", fallback=None)
+            self.config_parser.get("DEFAULT", "client_cert", fallback=None),
         )
         if not client_cert:
             raise ConfigError("No client_cert set")
@@ -108,7 +122,7 @@ class AppConfig:
     def client_key(self) -> str:
         client_key = os.getenv(
             "BLOCKPERF_CLIENT_KEY",
-            self.config_parser.get("DEFAULT", "client_key", fallback=None)
+            self.config_parser.get("DEFAULT", "client_key", fallback=None),
         )
         if not client_key:
             raise ConfigError("No client_key set")
@@ -118,7 +132,7 @@ class AppConfig:
     def operator(self) -> str:
         operator = os.getenv(
             "BLOCKPERF_OPERATOR",
-            self.config_parser.get("DEFAULT", "operator", fallback=None)
+            self.config_parser.get("DEFAULT", "operator", fallback=None),
         )
         if not operator:
             raise ConfigError("No operator set")
@@ -128,7 +142,7 @@ class AppConfig:
     def topic_base(self) -> str:
         topic_base = os.getenv(
             "BLOCKPERF_TOPIC_BASE",
-            self.config_parser.get("DEFAULT", "topic_base", fallback="develop")
+            self.config_parser.get("DEFAULT", "topic_base", fallback="develop"),
         )
         return topic_base
 
@@ -140,21 +154,25 @@ class AppConfig:
                 "DEFAULT",
                 "mqtt_broker_url",
                 fallback="a12j2zhynbsgdv-ats.iot.eu-central-1.amazonaws.com",
-            )
+            ),
         )
         return broker_url
 
     @property
     def mqtt_broker_port(self) -> int:
-        broker_port = int(os.getenv(
-            "BLOCKPERF_BROKER_PORT",
-            self.config_parser.get("DEFAULT", "mqtt_broker_port", fallback=8883)
-        ))
+        broker_port = int(
+            os.getenv(
+                "BLOCKPERF_BROKER_PORT",
+                self.config_parser.get("DEFAULT", "mqtt_broker_port", fallback=8883),
+            )
+        )
         return broker_port
 
     @property
     def enable_tracelogs(self) -> bool:
-        return bool(self.config_parser.get("DEFAULT", "enable_tracelogs", fallback=False))
+        return bool(
+            self.config_parser.get("DEFAULT", "enable_tracelogs", fallback=False)
+        )
 
     @property
     def tracelogs_dir(self) -> str:
@@ -163,6 +181,7 @@ class AppConfig:
     @property
     def topic(self) -> str:
         return f"{self.topic_base}/{self.operator}/{self.relay_public_ip}"
+
     # def _read_config(self, config: ConfigParser):
     #    """ """
     #    # Try to check whether CN of cert matches given operator

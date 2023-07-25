@@ -1,2 +1,2 @@
-__version__ = '2.0.0'
-logger_name = "blockperf"
+__version__ = "2.0.0"
+logger_name = "BLOCKPERF"
