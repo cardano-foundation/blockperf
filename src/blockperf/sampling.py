@@ -441,7 +441,7 @@ class BlockSample:
     @property
     def block_g(self) -> str:
         if not (frcb := self.fetch_request_completed_block):
-            return ""
+            return "0"
         return frcb.deltaq_g
 
     @property
