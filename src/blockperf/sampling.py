@@ -203,7 +203,7 @@ class LogEvent:
 
     @property
     def deltaq_g(self) -> str:
-        _deltaq_g = self.data.get("deltaq", {}).get("G", "")
+        _deltaq_g = self.data.get("deltaq", {}).get("G", "0")
         if not _deltaq_g:
             LOG.error(f"{self} has no deltaq_g {self.data}")
         return _deltaq_g
