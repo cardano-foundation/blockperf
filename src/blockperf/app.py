@@ -121,8 +121,10 @@ class App:
         ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
         """
         slot_delta = 0
-        if hasattr(self, 'last_slot_time'):
-            slot_delta = int(blocksample.slot_time.timestamp() - self.last_slot_time.timestamp())
+        if hasattr(self, "last_slot_time"):
+            slot_delta = int(
+                blocksample.slot_time.timestamp() - self.last_slot_time.timestamp()
+            )
 
         msg = (
             f"Block:.... {blocksample.block_num} ({blocksample.block_hash_short})\n"
@@ -185,7 +187,9 @@ class App:
             LOG.debug(json.dumps(payload, indent=4, sort_keys=True, ensure_ascii=False))
             self.print_block_stats(blocksample)
             start_publish = timer()
-            message_info = self.mqtt_client.publish(topic=self.app_config.topic, payload=json.dumps(payload, default=str))
+            message_info = self.mqtt_client.publish(
+                topic=self.app_config.topic, payload=json.dumps(payload, default=str)
+            )
             # blocks until timeout is reached
             message_info.wait_for_publish(self.app_config.mqtt_publish_timeout)
             end_publish = timer()

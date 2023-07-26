@@ -69,16 +69,6 @@ class AppConfig:
             raise ConfigError(f"Could not determine node logdir")
 
     @property
-    def blockperf_logfile(self) -> Union[Path, None]:
-        blockperf_logfile = os.getenv(
-            "BLOCKPERF_LOGFILE",
-            self.config_parser.get("DEFAULT", "blockperf_logfile", fallback=None),
-        )
-        if blockperf_logfile:
-            return Path(blockperf_logfile)
-        return None
-
-    @property
     def network_magic(self) -> int:
         """Retrieve network magic from ShelleyGenesisFile"""
         shelley_genesis = json.loads(
@@ -167,16 +157,6 @@ class AppConfig:
             )
         )
         return broker_port
-
-    @property
-    def enable_tracelogs(self) -> bool:
-        return bool(
-            self.config_parser.get("DEFAULT", "enable_tracelogs", fallback=False)
-        )
-
-    @property
-    def tracelogs_dir(self) -> str:
-        return str(self.config_parser.get("DEFAULT", "tracelogs_dir", fallback=""))
 
     @property
     def topic(self) -> str:
