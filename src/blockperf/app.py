@@ -270,10 +270,11 @@ class App:
             LogEventKind.COMPLETED_BLOCK_FETCH,
             LogEventKind.ADDED_TO_CURRENT_CHAIN,
         )
-        node_log = self.app_config.node_logdir.joinpath("node.json")
+        node_log = self.app_config.node_logfile
         if not node_log.exists():
             LOG.critical(f"{node_log} does not exist!")
             raise SystemExit
+        LOG.debug(f"Found node_logfile at {node_log}")
         max_age = int(datetime.now().timestamp()) - int(
             timedelta(seconds=self.app_config.max_event_age).total_seconds()
         )

@@ -61,12 +61,16 @@ class AppConfig:
 
     @property
     def node_logdir(self) -> Path:
+        return self.node_logfile.parent
+
+    @property
+    def node_logfile(self) -> Path:
         for ss in self.node_config.get("setupScribes", []):
             if ss.get("scFormat") == "ScJson" and ss.get("scKind") == "FileSK":
-                _node_logdir = Path(ss.get("scName")).parent
+                _node_logdir = Path(ss.get("scName"))
                 return _node_logdir
         else:
-            raise ConfigError(f"Could not determine node logdir")
+            raise ConfigError(f"Could not determine node logfile")
 
     @property
     def network_magic(self) -> int:
