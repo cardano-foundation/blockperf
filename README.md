@@ -9,6 +9,9 @@ further analysis. The Broker currently runs on AWS' IoT Core Platform.
 
 ## Installation
 
+You will need pythons venv module installed.
+https://packages.ubuntu.com/kinetic/python3-venv
+
 * Clone repositoy, create virtualenv and install package
 
 ```bash
@@ -18,7 +21,7 @@ git clone git@github.com:cardano-foundation/blockperf.git
 
 # cd into that directory and run the install script
 cd blockperf
-python -m venv venv
+python3 -m venv venv
 source venv/bin/activate
 pip install .
 ```

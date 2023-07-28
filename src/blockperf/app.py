@@ -2,6 +2,7 @@ import collections
 import json
 import logging
 import queue
+import os
 import threading
 import time
 from datetime import datetime, timedelta
@@ -279,7 +280,7 @@ class App:
             timedelta(seconds=self.app_config.max_event_age).total_seconds()
         )
         while True:
-            real_node_log = self.app_config.node_logdir.joinpath(node_log.readlink())
+            real_node_log = self.app_config.node_logdir.joinpath(os.readlink(node_log))
             same_file = True
             with open(real_node_log, "r") as fp:
                 fp.seek(0, 2)
@@ -288,9 +289,9 @@ class App:
                     new_line = fp.readline()
                     if not new_line:
                         # if no new_line is returned check if the symlink changed
-                        if real_node_log.name != node_log.readlink().name:
+                        if real_node_log.name != os.readlink(node_log):
                             LOG.debug(
-                                f"Symlink changed from {real_node_log.name} to {node_log.readlink()} "
+                                f"Symlink changed from {real_node_log.name} to {os.readlink(node_log)} "
                             )
                             same_file = False
                         time.sleep(0.5)
