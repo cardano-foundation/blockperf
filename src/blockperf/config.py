@@ -65,12 +65,18 @@ class AppConfig:
 
     @property
     def node_logfile(self) -> Path:
-        for ss in self.node_config.get("setupScribes", []):
-            if ss.get("scFormat") == "ScJson" and ss.get("scKind") == "FileSK":
-                _node_logdir = Path(ss.get("scName"))
-                return _node_logdir
+        """Node logfile from env variable or read out of the config"""
+        node_logfile = os.getenv("BLOCKPERF_NODE_LOGFILE")
+        if node_logfile:
+            node_logfile = Path(node_logfile)
         else:
-            raise ConfigError(f"Could not determine node logfile")
+            for ss in self.node_config.get("setupScribes", []):
+                if ss.get("scFormat") == "ScJson" and ss.get("scKind") == "FileSK":
+                    node_logfile = Path(ss.get("scName"))
+                    break
+        if node_logfile and node_logfile.exists():
+            return node_logfile
+        raise ConfigError(f"Could not determine node logfile from {node_logfile}")
 
     @property
     def network_magic(self) -> int:
