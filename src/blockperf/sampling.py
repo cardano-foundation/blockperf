@@ -30,6 +30,38 @@ class LogEventKind(Enum):
     COMPLETED_BLOCK_FETCH = "CompletedBlockFetch"
     SWITCHED_TO_A_FORK = "TraceAddBlockEvent.SwitchedToAFork"
     ADDED_TO_CURRENT_CHAIN = "TraceAddBlockEvent.AddedToCurrentChain"
+    ADD_BLOCK_VALIDATION = "TraceAddBlockEvent.AddBlockValidation.ValidCandidate"
+    TRY_SWITCH_TO_A_FORK = "TraceAddBlockEvent.TrySwitchToAFork"
+
+    TRACE_FOUND_INTERSECTION = "ChainSyncClientEvent.TraceFoundIntersection"
+    TRACE_MEMPOOL_ADDED_TX = "TraceMempoolAddedTx"
+    TRACE_MEMPOOL_REJECTED_TX = "TraceMempoolRejectedTx"
+    TRACE_MEMPOOL_REMOVE_TXS = "TraceMempoolRemoveTxs"
+
+
+    TRACE_ROLLED_BACK = "ChainSyncClientEvent.TraceRolledBack"
+    COMPLETED_FETCH_BATCH = "CompletedFetchBatch"
+    STARTED_FETCH_BATCH = "StartedFetchBatch"
+    ADDED_FETCH_REQUEST = "AddedFetchRequest"
+    ACKNOWLEDGED_FETCH_REQUEST = "AcknowledgedFetchRequest"
+    PEER_STATUS_CHANGED = "PeerStatusChanged"
+    PEERS_FETCH = "PeersFetch"
+    MUX_ERRORED = "MuxErrored"
+    INBOUND_GOVERNOR_COUNTERS = "InboundGovernorCounters"
+    DEMOTE_ASYNCHRONOUS = "DemoteAsynchronous"
+    DEMOTED_TO_COLD_REMOTE = "DemotedToColdRemote"
+    PEER_SELECTION_COUNTERS = "PeerSelectionCounters"
+    PROMOTE_COLD_PEERS = "PromoteColdPeers"
+    PROMOTE_COLD_DONE = "PromoteColdDone"
+    PROMOTE_COLD_FAILED = "PromoteColdFailed"
+    PROMOTE_WARM_PEERS = "PromoteWarmPeers"
+    PROMOTE_WARM_DONE = "PromoteWarmDone"
+    CONNECTION_MANAGER_COUNTERS = "ConnectionManagerCounters"
+    CONNECTION_HANDLER = "ConnectionHandler"
+    CONNECT_ERROR = "ConnectError"
+    LOG_VALUE = "LogValue"
+
+
     UNKNOWN = "Unknown"
 
 
@@ -76,11 +108,10 @@ class LogEvent:
         # ns seems to always be a single entry list ...
         self.ns = event_data.get("ns", [""])[0]
 
-    def __str__(self):
+    def __repr__(self):
+        self.data.get("kind")
         trace_kind = self.kind.value
-        if "." in trace_kind:
-            trace_kind = trace_kind.split(".")[1]
-        return f"{trace_kind} {self.block_hash_short} {self.at.strftime('%H:%M:%S.%f')[:-3]}>"
+        return f"{trace_kind} {self.block_hash[0:10]}>"
 
     @classmethod
     def from_logline(cls, logline: str):
@@ -89,7 +120,7 @@ class LogEvent:
             _json_data = json.loads(logline)
             return cls(_json_data)
         except json.decoder.JSONDecodeError as e:
-            LOG.error(f"Could not decode json from {logline} ")
+            LOG.error(f"Invalid JSON {logline} ")
             return None
 
     @property
@@ -110,7 +141,7 @@ class LogEvent:
             block_hash = newtip.split("@")[0]
 
         if not block_hash:
-            LOG.error(f"Could not determine block_hash for {self}")
+            block_hash = "X"
 
         return str(block_hash)
 
@@ -132,6 +163,7 @@ class LogEvent:
                     self._kind = LogEventKind(_value)
                     break
             else:
+                LOG.info(f"Saw unknow transaction {_value}")
                 self._kind = LogEventKind(LogEventKind.UNKNOWN)
         return self._kind
 

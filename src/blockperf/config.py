@@ -44,8 +44,10 @@ class AppConfig:
 
     @property
     def max_event_age(self) -> int:
-        """Maximum age of events in logfile to be considered in seconds"""
-        max_event_age = int(os.getenv("BLOCKPERF_MAX_EVENT_AGE", 60))
+        """Maximum age of events in logfile to be considered in seconds.
+        If the event is older then now - MAX_EVENT_AGE it is discarded.
+        """
+        max_event_age = int(os.getenv("BLOCKPERF_MAX_EVENT_AGE", 600))
         return max_event_age
 
     @property

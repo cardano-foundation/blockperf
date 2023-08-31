@@ -276,9 +276,6 @@ class App:
             LOG.critical(f"{node_log} does not exist!")
             raise SystemExit
         LOG.debug(f"Found node_logfile at {node_log}")
-        max_age = int(datetime.now().timestamp()) - int(
-            timedelta(seconds=self.app_config.max_event_age).total_seconds()
-        )
         while True:
             real_node_log = self.app_config.node_logdir.joinpath(os.readlink(node_log))
             same_file = True
@@ -294,15 +291,31 @@ class App:
                                 f"Symlink changed from {real_node_log.name} to {os.readlink(node_log)} "
                             )
                             same_file = False
-                        time.sleep(0.5)
+                        time.sleep(0.1)
                         continue
+
+                    # Create LogEvent from the new line provided
                     event = LogEvent.from_logline(new_line)
-                    if (
-                        not event
-                        or not int(event.at.timestamp()) > max_age
-                        or not event.kind in interesting_kinds
-                    ):
+                    if not event: # JSON Error decoding that line
                         continue
+                    # Make sure that we do not get too old events. For that the
+                    # config setting max_event_age sets a limit in seconds
+                    # within which a given event is considered valid. If it is
+                    # older then max_avent_age seconds ago, it should be discarded.
+                    # In other words: The timestamp of the event needs to be
+                    # higher (later in time) then what max_age is.
+                    #
+                    bad_before = int(datetime.now().timestamp()) - int(
+                        timedelta(seconds=self.app_config.max_event_age).total_seconds()
+                    )
+                    if int(event.at.timestamp()) < bad_before:
+                        # LOG.debug(f"Discarded {event}; older then max_age")
+                        continue
+
+                    if not event.kind in interesting_kinds:
+                        # LOG.debug(f"Discarded {event}; uninteresting kind.")
+                        continue
+
                     # There is an event, that is not too old and its
                     # of a kind that we are interested in -> yield it!
                     yield (event)
