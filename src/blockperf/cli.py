@@ -59,6 +59,7 @@ def cmd_run(config_file_path=None, verbose=False, debug=False):
 
     configure_logging(debug)
     app_config = AppConfig(config_file_path)
+    app_config.validate_or_die()
     app = App(app_config)
     app.run()
 

@@ -22,6 +22,18 @@ class AppConfig:
             self.config_parser.read(config_file)
         self.verbose = verbose
 
+    def validate_or_die(self):
+        """Try to check whether or not everything that is fundamentally needed
+            is actually configured, by asking for its value and triggering
+            the implemented failer if not found.
+        """
+        self.node_config_file
+        self.node_logdir
+        self.name
+        self.relay_public_ip
+        self.client_cert
+        self.client_key
+
     @property
     def node_config_file(self) -> Path:
         node_config_file = os.getenv(
@@ -131,14 +143,14 @@ class AppConfig:
         return client_key
 
     @property
-    def operator(self) -> str:
-        operator = os.getenv(
-            "BLOCKPERF_OPERATOR",
-            self.config_parser.get("DEFAULT", "operator", fallback=None),
+    def name(self) -> str:
+        name = os.getenv(
+            "BLOCKPERF_NAME",
+            self.config_parser.get("DEFAULT", "name", fallback=None),
         )
-        if not operator:
-            raise ConfigError("No operator set")
-        return operator
+        if not name:
+            raise ConfigError("No name set")
+        return name
 
     @property
     def topic_base(self) -> str:
@@ -172,13 +184,14 @@ class AppConfig:
 
     @property
     def topic(self) -> str:
-        return f"{self.topic_base}/{self.operator}/{self.relay_public_ip}"
+        return f"{self.topic_base}/{self.name}/{self.relay_public_ip}"
 
-    # def _read_config(self, config: ConfigParser):
-    #    """ """
-    #    # Try to check whether CN of cert matches given operator
-    #    cert = x509.load_pem_x509_certificate(Path(self.client_cert).read_bytes())
-    #    name_attribute = cert.subject.get_attributes_for_oid(NameOID.COMMON_NAME).pop()
-    #    assert (
-    #        name_attribute.value == self.operator
-    #    ), "Given operator does not match CN in certificate"
+    @property
+    def masked_addresses(self) -> list:
+        """
+        1.1.1.1
+        """
+        masked_addresses = os.getenv("BLOCKPERF_MASKED_ADDRESSES", None)
+        if not masked_addresses:
+            return list()
+        return list(["1.1.1.1", "2.2.2.2"])

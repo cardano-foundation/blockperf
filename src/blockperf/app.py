@@ -207,6 +207,32 @@ class App:
         """Producer thread that reads the logfile and puts blocksamples to queue.
 
         The for loop runs forever over all the events produced from the logfile.
+        Not all events seen in the logfile will make it into the for loop below.
+        See logevents(). The ones that do are stored.
+        For every new hash seen a new list ist created and all subsequent events
+        will be added to it. The list itself will be stored in a dictionary
+        called self.recorded_events. The key for the dictionary is the blockhash
+        and the value is the list of all events for that hash. Thus only events
+        that have a hash can be bubbled up from the logfile.
+
+        Every now and then an event is seen that indicates a block has been
+        added to the local chain. When that happens a new BlockSample is created
+        from all the events for that given block (hash). The sample is the
+        put into the queue and subsequently send over mqtt to the blockperf
+        backend.
+
+        * Explain the "published blocked window"... the fact that we keep
+            up to 10 blocks for which we might still see new data rolling in, that
+            might actually change and would need to be published again.
+
+        * Also: Improve the output after the block sample that shows some stats
+            about the current run (blocks published) events in filgt
+
+        * Also: Make sure that the events are actually deleted from the list
+            after the above mentioned window!!!
+
+        * Also: Check why i do have to hit Ctrl+C twice iin order to kill the
+            Programm.
 
         """
         adopting_block_kinds = (
@@ -216,15 +242,12 @@ class App:
         for event in self.logevents():
             _block_hash = event.block_hash
             assert _block_hash, f"Found event that has no hash {event}!"
-            # If the same hash has already been seen and published, dont bother
-            if _block_hash in self.published_hashes:
-                continue
 
-            LOG.debug(event)
             if not _block_hash in self.recorded_events:
-                LOG.debug(
-                    f"Creating new list for {event.block_hash_short}. {len(self.recorded_events)}"
+                LOG.info(
+                    f"New hash {event.block_hash_short} {len(self.recorded_events)}"
                 )
+                # A new hash is seen, make a new list to store its events in
                 self.recorded_events[_block_hash] = list()
             self.recorded_events[_block_hash].append(event)
 
@@ -251,36 +274,54 @@ class App:
             LOG.debug(f"Published hash queue size {len(self.published_hashes)}")
 
     def logevents(self):
-        """Generator that yields new lines from the logfile as they come in.
+        """Generator that "tails" the node log file and parses each. We are
+        interested in certain things the node logs that indicate for example
+        that a new header was announce by a peer or that the node initiated
+        (or completed) the download of a given block. All these events of
+        interest will the be yielded to the caller for further processing.
+        See blocksample_producer()
 
-        The node writes events to its logfile. This function constantly reads
-        that file and yields the lines as they come in. But it will only yield
-        a given event/line if:
-            * It is not older then MAX_EVENT_AGE
-            * It is of one of the interesting kinds
+        This function will only yield a given event if:
+        * It is not older then a certain amount of time.
+            For example, if a node needs to catch up to the network,
+            it will add a quite a few new Blocks that are old and we are
+            not interested in those. The age an event must be under is
+            configure with the max_age setting.
+        * It is of one of the interesting kinds
 
-        The logfile configured is a symlink. Instead of opening the symlink
-        the file it points to is opened. The node will eventually create
-        a new logfile and the opened file will not receive new entries.
-        When no new lines are read from readline() checks whether the logfile
-        has changed and opens the new one.
+        Also:
+
+        The noed writes its logs to a symlink. That will eventually rotate so
+        this script can not open that file and receive new lines for ever.
+        The node will eventually create a new logfile and blockperf will need
+        to cope with that. It does so by constantly checking whether or not
+        the symlinked file has changed and reopens the file if so.
+        While something based on inotify would have been nice, it would not
+        have worked on other operating systems. So this constant checking
+        of the target the symlink points to seemed like a good solution for now.
         """
         interesting_kinds = (
             LogEventKind.TRACE_DOWNLOADED_HEADER,
             LogEventKind.SEND_FETCH_REQUEST,
             LogEventKind.COMPLETED_BLOCK_FETCH,
             LogEventKind.ADDED_TO_CURRENT_CHAIN,
+            LogEventKind.SWITCHED_TO_A_FORK
         )
         node_log = self.app_config.node_logfile
         if not node_log.exists():
             LOG.critical(f"{node_log} does not exist!")
             raise SystemExit
-        LOG.debug(f"Found node_logfile at {node_log}")
+
+        first_loop = True
         while True:
             real_node_log = self.app_config.node_logdir.joinpath(os.readlink(node_log))
             same_file = True
             with open(real_node_log, "r") as fp:
-                fp.seek(0, 2)
+                # Only seek to the end of the file, if we just did a restart
+                # Do not seek if just opened "the next" logfile after a rotation
+                if first_loop == True:
+                    fp.seek(0, 2)
+                    first_loop = False
                 LOG.debug(f"Opened {real_node_log}")
                 while same_file:
                     new_line = fp.readline()
@@ -293,27 +334,19 @@ class App:
                             same_file = False
                         time.sleep(0.1)
                         continue
-
                     # Create LogEvent from the new line provided
                     event = LogEvent.from_logline(new_line)
                     if not event: # JSON Error decoding that line
                         continue
-                    # Make sure that we do not get too old events. For that the
-                    # config setting max_event_age sets a limit in seconds
-                    # within which a given event is considered valid. If it is
-                    # older then max_avent_age seconds ago, it should be discarded.
-                    # In other words: The timestamp of the event needs to be
-                    # higher (later in time) then what max_age is.
-                    LOG.debug(f"{event}")
+                    LOG.debug(event)
                     bad_before = int(datetime.now().timestamp()) - int(
                         timedelta(seconds=self.app_config.max_event_age).total_seconds()
                     )
+                    # Too old event
                     if int(event.at.timestamp()) < bad_before:
                         continue
-
+                    # Uninteresting event
                     if not event.kind in interesting_kinds:
                         continue
-
-                    # There is an event, that is not too old and its
-                    # of a kind that we are interested in -> yield it!
+                    # Nice event, yield it
                     yield (event)

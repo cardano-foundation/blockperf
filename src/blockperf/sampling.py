@@ -41,7 +41,6 @@ class LogEventKind(Enum):
     SEND_FETCH_REQUEST = "SendFetchRequest"
     ADDED_FETCH_REQUEST = "AddedFetchRequest"
     ACKNOWLEDGED_FETCH_REQUEST = "AcknowledgedFetchRequest"
-    FETCH_DECISION_DECLINED = "FetchDecision declined" # yes, with a blank
     STARTED_FETCH_BATCH = "StartedFetchBatch"
     COMPLETED_BLOCK_FETCH = "CompletedBlockFetch"
     COMPLETED_FETCH_BATCH = "CompletedFetchBatch"
@@ -54,6 +53,12 @@ class LogEventKind(Enum):
     PEERS_FETCH = "PeersFetch"
     MUX_ERRORED = "MuxErrored"
     INBOUND_GOVERNOR_COUNTERS = "InboundGovernorCounters"
+    GOVERNOR_WAKEUP = "GovernorWakeup"
+    USE_LEDGER_AFTER = "UseLedgerAfter"
+    PUBLIC_ROOTS_REQUEST = "PublicRootsRequest"
+    PUBLIC_ROOTS_RESULTS = "PublicRootsResults"
+    PUBLIC_ROOT_DOMAINS = "PublicRootDomains"
+    PICKED_PEERS = "PickedPeers"
     DEMOTE_ASYNCHRONOUS = "DemoteAsynchronous"
     PROMOTE_COLD_PEERS = "PromoteColdPeers"
     PROMOTE_WARM_PEERS = "PromoteWarmPeers"
@@ -122,17 +127,19 @@ class LogEvent:
         self.ns = event_data.get("ns", [""])[0]
 
     def __repr__(self):
-
         _kind = self.kind.value
         if "." in _kind:
             _kind = f"{_kind.split('.')[1]}"
+        _repr = f"LogEvent {_kind}"
 
-        _repr = f"<LogEvent {_kind}"
+        if self.kind == LogEventKind.UNKNOWN:
+            _repr += f" {self.data.get('kind')}"
+
         if self.block_hash:
             _repr += f" Hash: {self.block_hash[0:10]}"
         if self.block_num:
             _repr += f" BlockNo: {self.block_num}"
-        return f"{_repr} >"
+        return _repr
 
     @classmethod
     def from_logline(cls, logline: str):
@@ -188,42 +195,42 @@ class LogEvent:
     def delay(self) -> float:
         _delay = self.data.get("delay", 0.0)
         if not _delay:
-            LOG.error(f"{self} has no delay {self.data}")
+            LOG.warning(f"{self} has no delay {self.data}")
         return _delay
 
     @property
     def size(self) -> int:
         _size = self.data.get("size", 0)
         if not _size:
-            LOG.error(f"{self} has no size {self.data}")
+            LOG.warning(f"{self} has no size {self.data}")
         return _size
 
     @property
     def local_addr(self) -> str:
         _local_addr = self.data.get("peer", {}).get("local", {}).get("addr", "")
         if not _local_addr:
-            LOG.error(f"{self} has no local_addr {self.data}")
+            LOG.warning(f"{self} has no local_addr {self.data}")
         return _local_addr
 
     @property
     def local_port(self) -> str:
         _local_port = self.data.get("peer", {}).get("local", {}).get("port", "")
         if not _local_port:
-            LOG.error(f"{self} has no local_port {self.data}")
+            LOG.warning(f"{self} has no local_port {self.data}")
         return _local_port
 
     @property
     def remote_addr(self) -> str:
         _remote_addr = self.data.get("peer", {}).get("remote", {}).get("addr", "")
         if not _remote_addr:
-            LOG.error(f"{self} has no remote_addr {self.data}")
+            LOG.warning(f"{self} has no remote_addr {self.data}")
         return _remote_addr
 
     @property
     def remote_port(self) -> str:
         _remote_port = self.data.get("peer", {}).get("remote", {}).get("port", "")
         if not _remote_port:
-            LOG.error(f"{self} has no remote_port {self.data}")
+            LOG.warning(f"{self} has no remote_port {self.data}")
         return _remote_port
 
     @property
