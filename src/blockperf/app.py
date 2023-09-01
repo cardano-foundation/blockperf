@@ -304,16 +304,14 @@ class App:
                     # older then max_avent_age seconds ago, it should be discarded.
                     # In other words: The timestamp of the event needs to be
                     # higher (later in time) then what max_age is.
-                    #
+                    LOG.debug(f"{event}")
                     bad_before = int(datetime.now().timestamp()) - int(
                         timedelta(seconds=self.app_config.max_event_age).total_seconds()
                     )
                     if int(event.at.timestamp()) < bad_before:
-                        # LOG.debug(f"Discarded {event}; older then max_age")
                         continue
 
                     if not event.kind in interesting_kinds:
-                        # LOG.debug(f"Discarded {event}; uninteresting kind.")
                         continue
 
                     # There is an event, that is not too old and its

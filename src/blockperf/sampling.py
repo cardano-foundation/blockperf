@@ -25,42 +25,55 @@ network_starttime = {
 class LogEventKind(Enum):
     """All events from the log file are of a specific kind."""
 
-    TRACE_DOWNLOADED_HEADER = "ChainSyncClientEvent.TraceDownloadedHeader"
-    SEND_FETCH_REQUEST = "SendFetchRequest"
-    COMPLETED_BLOCK_FETCH = "CompletedBlockFetch"
+    # TraceAddBlockEvent
     SWITCHED_TO_A_FORK = "TraceAddBlockEvent.SwitchedToAFork"
     ADDED_TO_CURRENT_CHAIN = "TraceAddBlockEvent.AddedToCurrentChain"
     ADD_BLOCK_VALIDATION = "TraceAddBlockEvent.AddBlockValidation.ValidCandidate"
     TRY_SWITCH_TO_A_FORK = "TraceAddBlockEvent.TrySwitchToAFork"
+    IGNORE_BLOCK_ALREADY_IN_VOLATILE_DB = "TraceAddBlockEvent.IgnoreBlockAlreadyInVolatileDB"
 
+    # ChainSyncClientEvent
+    TRACE_DOWNLOADED_HEADER = "ChainSyncClientEvent.TraceDownloadedHeader"
     TRACE_FOUND_INTERSECTION = "ChainSyncClientEvent.TraceFoundIntersection"
+    TRACE_ROLLED_BACK = "ChainSyncClientEvent.TraceRolledBack"
+
+    # Other
+    SEND_FETCH_REQUEST = "SendFetchRequest"
+    ADDED_FETCH_REQUEST = "AddedFetchRequest"
+    ACKNOWLEDGED_FETCH_REQUEST = "AcknowledgedFetchRequest"
+    FETCH_DECISION_DECLINED = "FetchDecision declined" # yes, with a blank
+    STARTED_FETCH_BATCH = "StartedFetchBatch"
+    COMPLETED_BLOCK_FETCH = "CompletedBlockFetch"
+    COMPLETED_FETCH_BATCH = "CompletedFetchBatch"
     TRACE_MEMPOOL_ADDED_TX = "TraceMempoolAddedTx"
     TRACE_MEMPOOL_REJECTED_TX = "TraceMempoolRejectedTx"
     TRACE_MEMPOOL_REMOVE_TXS = "TraceMempoolRemoveTxs"
-
-
-    TRACE_ROLLED_BACK = "ChainSyncClientEvent.TraceRolledBack"
-    COMPLETED_FETCH_BATCH = "CompletedFetchBatch"
-    STARTED_FETCH_BATCH = "StartedFetchBatch"
-    ADDED_FETCH_REQUEST = "AddedFetchRequest"
-    ACKNOWLEDGED_FETCH_REQUEST = "AcknowledgedFetchRequest"
+    TRACE_LOCAL_ROOT_DNSMAP = "TraceLocalRootDNSMap"
+    PEER_SELECTION_COUNTERS = "PeerSelectionCounters"
     PEER_STATUS_CHANGED = "PeerStatusChanged"
     PEERS_FETCH = "PeersFetch"
     MUX_ERRORED = "MuxErrored"
     INBOUND_GOVERNOR_COUNTERS = "InboundGovernorCounters"
     DEMOTE_ASYNCHRONOUS = "DemoteAsynchronous"
-    DEMOTED_TO_COLD_REMOTE = "DemotedToColdRemote"
-    PEER_SELECTION_COUNTERS = "PeerSelectionCounters"
     PROMOTE_COLD_PEERS = "PromoteColdPeers"
+    PROMOTE_WARM_PEERS = "PromoteWarmPeers"
     PROMOTE_COLD_DONE = "PromoteColdDone"
     PROMOTE_COLD_FAILED = "PromoteColdFailed"
-    PROMOTE_WARM_PEERS = "PromoteWarmPeers"
+    PROMOTED_TO_WARM_REMOTE = "PromotedToWarmRemote"
+    PROMOTED_TO_HOT_REMOTE = "PromotedToHotRemote"
+    DEMOTED_TO_COLD_REMOTE = "DemotedToColdRemote"
+    DEMOTED_TO_WARM_REMOTE = "DemotedToWarmRemote"
+    SUBSCRIPTION_TRACE = "SubscriptionTrace"
+    ERROR_POLICY_TRACE = "ErrorPolicyTrace"
+    LOCAL_ROOT_WAITING = "LocalRootWaiting"
+    LOCAL_ROOT_RESULT = "LocalRootResult"
+    LOCAL_ROOT_GROUPS = "LocalRootGroups"
+    RESPONDER_ERRORED = "ResponderErrored"
     PROMOTE_WARM_DONE = "PromoteWarmDone"
     CONNECTION_MANAGER_COUNTERS = "ConnectionManagerCounters"
     CONNECTION_HANDLER = "ConnectionHandler"
     CONNECT_ERROR = "ConnectError"
     LOG_VALUE = "LogValue"
-
 
     UNKNOWN = "Unknown"
 
@@ -109,9 +122,17 @@ class LogEvent:
         self.ns = event_data.get("ns", [""])[0]
 
     def __repr__(self):
-        self.data.get("kind")
-        trace_kind = self.kind.value
-        return f"{trace_kind} {self.block_hash[0:10]}>"
+
+        _kind = self.kind.value
+        if "." in _kind:
+            _kind = f"{_kind.split('.')[1]}"
+
+        _repr = f"<LogEvent {_kind}"
+        if self.block_hash:
+            _repr += f" Hash: {self.block_hash[0:10]}"
+        if self.block_num:
+            _repr += f" BlockNo: {self.block_num}"
+        return f"{_repr} >"
 
     @classmethod
     def from_logline(cls, logline: str):
@@ -139,10 +160,6 @@ class LogEvent:
         ):
             newtip = self.data.get("newtip", "")
             block_hash = newtip.split("@")[0]
-
-        if not block_hash:
-            block_hash = "X"
-
         return str(block_hash)
 
     @property
@@ -163,7 +180,7 @@ class LogEvent:
                     self._kind = LogEventKind(_value)
                     break
             else:
-                LOG.info(f"Saw unknow transaction {_value}")
+                LOG.warning(f"Saw unknow transaction {_value}")
                 self._kind = LogEventKind(LogEventKind.UNKNOWN)
         return self._kind
 
@@ -213,7 +230,7 @@ class LogEvent:
     def slot_num(self) -> int:
         _slot_num = self.data.get("slot", 0)
         if not _slot_num:
-            LOG.error(f"{self} has no slot_num {_slot_num} {self.data}")
+            LOG.warning(f"{self} has no slot_num {_slot_num} {self.data}")
         return _slot_num
 
     @property
@@ -229,29 +246,27 @@ class LogEvent:
                 "unBlockNo" in _blockNo
             ), "blockNo is a dict but does not have unBlockNo"
             _blockNo = _blockNo.get("unBlockNo", 0)
-        if not _blockNo:
-            LOG.error(f"{self} has no block_num")
         return _blockNo
 
     @property
     def deltaq_g(self) -> str:
         _deltaq_g = self.data.get("deltaq", {}).get("G", "0")
         if not _deltaq_g:
-            LOG.error(f"{self} has no deltaq_g {self.data}")
+            LOG.warning(f"{self} has no deltaq_g {self.data}")
         return _deltaq_g
 
     @property
     def chain_length_delta(self) -> int:
         _chain_length_delta = self.data.get("chainLengthDelta", 0)
         if not _chain_length_delta:
-            LOG.error(f"{self} has no chain_length_delta {self.data}")
+            LOG.warning(f"{self} has no chain_length_delta {self.data}")
         return _chain_length_delta
 
     @property
-    def newtip(self):
+    def newtip(self) -> str:
         _newtip = self.data.get("newtip", "")
         if not _newtip:
-            LOG.error(f"{self} has no newtip {self.data}")
+            LOG.warning(f"{self} has no newtip {self.data}")
         else:
             _newtip = _newtip.split("@")[0]
         return _newtip
@@ -311,7 +326,7 @@ class BlockSample:
             if event.kind == LogEventKind.TRACE_DOWNLOADED_HEADER:
                 return event
         # That would be really odd to not find a TRACE_DOWNLOADED_HEADER
-        LOG.error(f"No first {LogEventKind.TRACE_DOWNLOADED_HEADER} found for {self}")
+        LOG.warning(f"No first {LogEventKind.TRACE_DOWNLOADED_HEADER}; BlockNo: {self.block_num} Hash: {self.block_hash}")
         return None
 
     @property
@@ -320,7 +335,7 @@ class BlockSample:
         for event in self.tace_events:
             if event.kind == LogEventKind.COMPLETED_BLOCK_FETCH:
                 return event
-        LOG.error(f"No first {LogEventKind.COMPLETED_BLOCK_FETCH} found for {self}")
+        LOG.warning(f"No first {LogEventKind.COMPLETED_BLOCK_FETCH}; BlockNo: {self.block_num} Hash: {self.block_hash}")
         return None
 
     @property
