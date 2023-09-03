@@ -265,7 +265,8 @@ class App:
                 # Remove from left; Latest 10 hashes published will be in deque
                 removed_hash = self.published_hashes.popleft()
                 # Delete that events for hash from recorded_events
-                del self.recorded_events[removed_hash]
+                if removed_hash in self.recorded_events:
+                    del self.recorded_events[removed_hash]
                 LOG.debug(f"Removed {removed_hash} from published_hashes")
 
             LOG.debug(
