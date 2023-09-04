@@ -80,6 +80,16 @@ class LogEventKind(Enum):
     CONNECTION_HANDLER = "ConnectionHandler"
     CONNECT_ERROR = "ConnectError"
     LOG_VALUE = "LogValue"
+    CHURN_MODE = "ChurnMode"
+    TARGETS_CHANGED = "TargetsChanged"
+    DEMOTE_HOT_PEERS = "DemoteHotPeers"
+    CLIENT_TERMINATING = "ClientTerminating"
+    PEER_STATUS_CHANGE_FAILURE = "PeerStatusChangeFailure"
+    DEMOTE_HOT_FAILED = "DemoteHotFailed"
+    PEER_MONITORING_ERROR = "PeerMonitoringError"
+    FORGE_COLD_PEERS = "ForgeColdPeers"
+    DEMOTE_WARM_PEERS = "DemoteWarmPeers"
+    DEMOTE_WARM_DONE = "DemoteWarmDone"
 
     UNKNOWN = "Unknown"
 

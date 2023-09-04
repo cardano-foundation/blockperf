@@ -10,11 +10,12 @@ def test_config_file():
     assert config_file.as_posix() == "/opt/cardano/cnode/files/config.json"
 
 
-def _test_other():
+def test_other():
     os.environ["BLOCKPERF_NODE_CONFIG"] = "/this/config/does/not/exist"
+    config = AppConfig(None)
     with pytest.raises(ConfigError):
-        config = AppConfig(None)
         config_file = config.node_config_file
+        assert config_file
 
 def test_shelley_genesis_file():
     config = AppConfig(None)

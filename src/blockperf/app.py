@@ -228,8 +228,6 @@ class App:
         from the shelley config and the assumption to hold "the last hour" worth
         of blocks. Which currently is 180.
         """
-
-
         adopting_block_kinds = (
             LogEventKind.ADDED_TO_CURRENT_CHAIN,
             LogEventKind.SWITCHED_TO_A_FORK,
@@ -302,13 +300,13 @@ class App:
             LogEventKind.ADDED_TO_CURRENT_CHAIN,
             LogEventKind.SWITCHED_TO_A_FORK
         )
-        node_log = self.app_config.node_logfile
-        if not node_log.exists():
-            LOG.critical(f"{node_log} does not exist!")
-            raise SystemExit
-
         first_loop = True
         while True:
+            node_log = self.app_config.node_logfile
+            if not node_log.exists():
+                LOG.warning(f"{node_log} does not exist! Waiting for 10 seconds")
+                time.sleep(10)
+                continue
             real_node_log = self.app_config.node_logdir.joinpath(os.readlink(node_log))
             same_file = True
             with open(real_node_log, "r") as fp:

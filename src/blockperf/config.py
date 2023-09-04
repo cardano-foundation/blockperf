@@ -89,9 +89,9 @@ class AppConfig:
                 if ss.get("scFormat") == "ScJson" and ss.get("scKind") == "FileSK":
                     node_logfile = Path(ss.get("scName"))
                     break
-        if node_logfile and node_logfile.exists():
-            return node_logfile
-        raise ConfigError(f"Error loading logfile {node_logfile}")
+        if not node_logfile:
+            raise ConfigError(f"Logfile not given")
+        return node_logfile
 
     @property
     def _shelley_genesis_file(self) -> Path:
