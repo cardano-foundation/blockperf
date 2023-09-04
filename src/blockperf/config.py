@@ -109,10 +109,10 @@ class AppConfig:
 
     @property
     def active_slot_coef(self) -> float:
-        active_slot_coef = float(self._shelley_genesis_data.get("activeSlotsCoef", 0.0))
-        if not active_slot_coef or active_slot_coef == 0.00:
+        active_slot_coef = self._shelley_genesis_data.get("activeSlotsCoef", None)
+        if not active_slot_coef:
             raise ConfigError("Error retrieving activeSlotsCoef from shelley-genesis")
-        return active_slot_coef
+        return float(active_slot_coef)
 
     @property
     def relay_public_ip(self) -> str:
