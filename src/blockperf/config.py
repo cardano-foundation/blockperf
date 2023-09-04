@@ -95,12 +95,12 @@ class AppConfig:
 
     @property
     def _shelley_genesis_file(self) -> Path:
-        _f = self.node_config.get("ShelleyGenesisFile", None)
-        return self.node_configdir.joinpath(_f)
+        return self.node_config.get("ShelleyGenesisFile", None)
 
     @property
     def _shelley_genesis_data(self) -> dict:
-        return json.loads(self._shelley_genesis_file.read_text())
+        _f = self.node_configdir.joinpath(self._shelley_genesis_file)
+        return json.loads(_f.read_text())
 
     @property
     def network_magic(self) -> int:
@@ -109,7 +109,7 @@ class AppConfig:
 
     @property
     def active_slot_coef(self) -> float:
-        active_slot_coef = self._shelley_genesis_data.get("activeSlotsCoef", None)
+        active_slot_coef = self._shelley_genesis_data.get("activeSlotsCoeff", None)
         if not active_slot_coef:
             raise ConfigError("Error retrieving activeSlotsCoef from shelley-genesis")
         return float(active_slot_coef)
