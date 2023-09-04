@@ -328,7 +328,6 @@ class App:
                             same_file = False
                         time.sleep(0.1)
                         continue
-                    print(new_line)
                     # Create LogEvent from the new line provided
                     event = LogEvent.from_logline(new_line, masked_addresses=self.app_config.masked_addresses)
                     if not event: # JSON Error decoding that line
