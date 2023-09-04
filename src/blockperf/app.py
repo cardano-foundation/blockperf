@@ -221,20 +221,15 @@ class App:
         put into the queue and subsequently send over mqtt to the blockperf
         backend.
 
-        * Explain the "published blocked window"... the fact that we keep
-            up to 10 blocks for which we might still see new data rolling in, that
-            might actually change and would need to be published again.
-
-        * Also: Improve the output after the block sample that shows some stats
-            about the current run (blocks published) events in filgt
-
-        * Also: Make sure that the events are actually deleted from the list
-            after the above mentioned window!!!
-
-        * Also: Check why i do have to hit Ctrl+C twice iin order to kill the
-            Programm.
-
+        The recorded block events need to be delete at some point again. But
+        they should not be deleted directly after the blocksample has been
+        published. Therfore a deque is created that holds the hashs' of the
+        last X published blocks. X is calculated based on the activeSlotCoef
+        from the shelley config and the assumption to hold "the last hour" worth
+        of blocks. Which currently is 180.
         """
+
+
         adopting_block_kinds = (
             LogEventKind.ADDED_TO_CURRENT_CHAIN,
             LogEventKind.SWITCHED_TO_A_FORK,
@@ -260,15 +255,17 @@ class App:
             events = self.recorded_events[_block_hash]
             new_sample = BlockSample(events, self.app_config)
             self.q.put(new_sample)
+            # Add hash to right side of deque
             self.published_hashes.append(_block_hash)
-            if len(self.published_hashes) >= 10:
-                # Remove from left; Latest 10 hashes published will be in deque
+            if len(self.published_hashes) >= self.app_config.active_slot_coef * 3600:
+                # Remove from left of deque
                 removed_hash = self.published_hashes.popleft()
-                # Delete that events for hash from recorded_events
+                # Delete events for hash from recorded_events
                 if removed_hash in self.recorded_events:
                     del self.recorded_events[removed_hash]
-                LOG.debug(f"Removed {removed_hash} from published_hashes")
-
+                    LOG.debug(f"Removed {removed_hash} from published_hashes")
+                else:
+                    LOG.warning(f"Hash not found in recorded_events for deletion '{removed_hash}'")
             LOG.debug(
                 f"Recorded blocks: {len(self.recorded_events.keys())} \n[{' '.join([ h[0:10] for h in self.recorded_events.keys()])}]"
             )
@@ -290,16 +287,13 @@ class App:
             configure with the max_age setting.
         * It is of one of the interesting kinds
 
-        Also:
-
-        The noed writes its logs to a symlink. That will eventually rotate so
-        this script can not open that file and receive new lines for ever.
+        The node writes its logs to a symlink. That will eventually rotate so
+        this script can not open that file and receive new lines forever.
         The node will eventually create a new logfile and blockperf will need
-        to cope with that. It does so by constantly checking whether or not
-        the symlinked file has changed and reopens the file if so.
-        While something based on inotify would have been nice, it would not
-        have worked on other operating systems. So this constant checking
-        of the target the symlink points to seemed like a good solution for now.
+        to cope with that. It does so by opening the file the symlink points to
+        and constantly checking whether or not the symlinked has changed. If it
+        does the new file is opened.
+
         """
         interesting_kinds = (
             LogEventKind.TRACE_DOWNLOADED_HEADER,
@@ -318,8 +312,7 @@ class App:
             real_node_log = self.app_config.node_logdir.joinpath(os.readlink(node_log))
             same_file = True
             with open(real_node_log, "r") as fp:
-                # Only seek to the end of the file, if we just did a restart
-                # Do not seek if just opened "the next" logfile after a rotation
+                # Only seek to the end of the file, if we just did a "fresh" start
                 if first_loop == True:
                     fp.seek(0, 2)
                     first_loop = False
@@ -335,8 +328,9 @@ class App:
                             same_file = False
                         time.sleep(0.1)
                         continue
+                    print(new_line)
                     # Create LogEvent from the new line provided
-                    event = LogEvent.from_logline(new_line)
+                    event = LogEvent.from_logline(new_line, masked_addresses=self.app_config.masked_addresses)
                     if not event: # JSON Error decoding that line
                         continue
                     LOG.debug(event)

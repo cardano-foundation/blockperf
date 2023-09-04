@@ -2,6 +2,7 @@
 Why configparser? Because its simple. There is a blockperf.ini file in the
 contrib/ folder which has all options and a short explanation of what they do.
 """
+import ipaddress
 import json
 import os
 from configparser import ConfigParser
@@ -90,17 +91,28 @@ class AppConfig:
                     break
         if node_logfile and node_logfile.exists():
             return node_logfile
-        raise ConfigError(f"Could not determine node logfile from {node_logfile}")
+        raise ConfigError(f"Error loading logfile {node_logfile}")
+
+    @property
+    def _shelley_genesis_file(self) -> Path:
+        _f = self.node_config.get("ShelleyGenesisFile", None)
+        return self.node_configdir.joinpath(_f)
+
+    @property
+    def _shelley_genesis_data(self) -> dict:
+        return json.loads(self._shelley_genesis_file.read_text())
 
     @property
     def network_magic(self) -> int:
         """Retrieve network magic from ShelleyGenesisFile"""
-        shelley_genesis = json.loads(
-            self.node_configdir.joinpath(
-                self.node_config.get("ShelleyGenesisFile", "")
-            ).read_text()
-        )
-        return int(shelley_genesis.get("networkMagic", 0))
+        return int(self._shelley_genesis_data.get("networkMagic", 0))
+
+    @property
+    def active_slot_coef(self) -> float:
+        active_slot_coef = float(self._shelley_genesis_data.get("activeSlotsCoef", 0.0))
+        if not active_slot_coef or active_slot_coef == 0.00:
+            raise ConfigError("Error retrieving activeSlotsCoef from shelley-genesis")
+        return active_slot_coef
 
     @property
     def relay_public_ip(self) -> str:
@@ -188,10 +200,15 @@ class AppConfig:
 
     @property
     def masked_addresses(self) -> list:
-        """
-        1.1.1.1
-        """
         masked_addresses = os.getenv("BLOCKPERF_MASKED_ADDRESSES", None)
-        if not masked_addresses:
-            return list()
-        return list(["1.1.1.1", "2.2.2.2"])
+        if masked_addresses:
+            _validated_addresses = list()
+            # String split and return list
+            for addr in masked_addresses.split(","):
+                try:
+                    ipaddress.ip_address(addr)
+                    _validated_addresses.append(addr)
+                except ValueError:
+                    raise ConfigError(f"Given address {addr} is not a valid ip address")
+            return _validated_addresses
+        return list()

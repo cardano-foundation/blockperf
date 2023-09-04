@@ -58,9 +58,12 @@ BLOCKPERF_CLIENT_KEY="XXX"
 BLOCKPERF_TOPIC_BASE="blockperf"
 
 # The following may be set but are not required, defaults are shown in examples
-# BLOCKPERF_RELAY_PUBLIC_PORT="3001"  # port your relay listens on
-# BLOCKPERF_MQTT_PUBLISH_TIMEOUT="5"    # Timeout for mqtt publishing
-# BLOCKPERF_BROKER_URL="a12j2zhynbsgdv-ats.iot.eu-central-1.amazonaws.com"  # broker to publish to
+# port your relay listens on
+# BLOCKPERF_RELAY_PUBLIC_PORT="3001"
+# Timeout for mqtt publishing
+# BLOCKPERF_MQTT_PUBLISH_TIMEOUT="5"
+# broker url to publish to
+# BLOCKPERF_BROKER_URL="a12j2zhynbsgdv-ats.iot.eu-central-1.amazonaws.com"
 ```
 
 * Via an ini file

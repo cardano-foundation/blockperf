@@ -69,6 +69,7 @@ class LogEventKind(Enum):
     DEMOTED_TO_COLD_REMOTE = "DemotedToColdRemote"
     DEMOTED_TO_WARM_REMOTE = "DemotedToWarmRemote"
     SUBSCRIPTION_TRACE = "SubscriptionTrace"
+    ACCEPT_POLICY_TRACE = "AcceptPolicyTrace"
     ERROR_POLICY_TRACE = "ErrorPolicyTrace"
     LOCAL_ROOT_WAITING = "LocalRootWaiting"
     LOCAL_ROOT_RESULT = "LocalRootResult"
@@ -142,9 +143,12 @@ class LogEvent:
         return _repr
 
     @classmethod
-    def from_logline(cls, logline: str):
+    def from_logline(cls, logline: str, masked_addresses: list = []):
         """Takes a single line from the logs and creates a"""
         try:
+            # Most stupid (simple) way to remove ip addresss given
+            for addr in masked_addresses:
+                logline = logline.replace(addr, "x.x.x.x")
             _json_data = json.loads(logline)
             return cls(_json_data)
         except json.decoder.JSONDecodeError as e:
@@ -222,6 +226,7 @@ class LogEvent:
     @property
     def remote_addr(self) -> str:
         _remote_addr = self.data.get("peer", {}).get("remote", {}).get("addr", "")
+
         if not _remote_addr:
             LOG.warning(f"{self} has no remote_addr {self.data}")
         return _remote_addr
