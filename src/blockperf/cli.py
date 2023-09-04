@@ -24,8 +24,12 @@ def configure_logging(debug: bool = False):
     """Configures the root logger"""
     # Configure blockperf logger
     lvl = logging.DEBUG if debug else logging.INFO
+    formatter = logging.Formatter("%(asctime)s %(levelname)s %(message)s")
+    formatter.datefmt = "%Y-%m-%d %H:%M:%S"
     stdout_handler = logging.StreamHandler()
     stdout_handler.setLevel(lvl)
+    stdout_handler.setFormatter(formatter)
+
     logging.basicConfig(level=lvl, handlers=[stdout_handler])
 
 
