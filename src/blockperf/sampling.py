@@ -90,6 +90,8 @@ class LogEventKind(Enum):
     FORGE_COLD_PEERS = "ForgeColdPeers"
     DEMOTE_WARM_PEERS = "DemoteWarmPeers"
     DEMOTE_WARM_DONE = "DemoteWarmDone"
+    TOOK_SNAPSHOT = "TraceSnapshotEvent.TookSnapshot"
+    PROMOTED_COLD_LOCAL_PEERS = "PromoteColdLocalPeers"
 
     UNKNOWN = "Unknown"
 
@@ -201,7 +203,6 @@ class LogEvent:
                     self._kind = LogEventKind(_value)
                     break
             else:
-                LOG.warning(f"Saw unknow transaction {_value}")
                 self._kind = LogEventKind(LogEventKind.UNKNOWN)
         return self._kind
 
@@ -347,8 +348,8 @@ class BlockSample:
         for event in self.tace_events:
             if event.kind == LogEventKind.TRACE_DOWNLOADED_HEADER:
                 return event
-        # That would be really odd to not find a TRACE_DOWNLOADED_HEADER
-        LOG.warning(f"No first {LogEventKind.TRACE_DOWNLOADED_HEADER}; BlockNo: {self.block_num} Hash: {self.block_hash}")
+        # If there is no TRACE_DOWNLOADED_HEADER, we cant even figure out block_num or block_hash (currently)
+        LOG.warning(f"No first {LogEventKind.TRACE_DOWNLOADED_HEADER}")
         return None
 
     @property

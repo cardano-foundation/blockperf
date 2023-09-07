@@ -5,6 +5,7 @@ import queue
 import os
 import threading
 import time
+from pathlib import Path
 from datetime import datetime, timedelta
 from timeit import default_timer as timer
 
@@ -44,8 +45,10 @@ class App:
         # LOG.info("Consumer thread started")
 
         # Blocks main thread until all joined threads are finished
+        LOG.info(f"App starting producer and consumer threads")
         producer_thread.join()
         consumer_thread.join()
+        LOG.info(f"App finished run().")
 
     @property
     def mqtt_client(self) -> mqtt.Client:
@@ -163,7 +166,15 @@ class App:
         }
         return payload
 
+
     def blocksample_consumer(self):
+        while True:
+            try:
+                self._blocksample_consumer()
+            except Exception:
+                LOG.exception("Exception in blocksample_consumer; Restarting Loop")
+
+    def _blocksample_consumer(self):
         """Consumer thread that listens to the queue and published each sample
         the the consumer puts into it."""
         self.mqtt_client
@@ -184,9 +195,10 @@ class App:
         while True:
             LOG.debug(f"Waiting for next item in queue, Current size: {self.q.qsize()}")
             blocksample = self.q.get()
+            self.print_block_stats(blocksample)
+
             payload = self.mqtt_payload_from(blocksample)
             LOG.debug(json.dumps(payload, indent=4, sort_keys=True, ensure_ascii=False))
-            self.print_block_stats(blocksample)
             start_publish = timer()
             message_info = self.mqtt_client.publish(
                 topic=self.app_config.topic, payload=json.dumps(payload, default=str)
@@ -204,6 +216,13 @@ class App:
                 LOG.error("Publish timeout reached")
 
     def blocksample_producer(self):
+        while True:
+            try:
+                self._blocksample_producer()
+            except Exception:
+                LOG.exception("Exception in blocksample_producer; Restarting Loop")
+
+    def _blocksample_producer(self):
         """Producer thread that reads the logfile and puts blocksamples to queue.
 
         The for loop runs forever over all the events produced from the logfile.
@@ -237,8 +256,8 @@ class App:
             assert _block_hash, f"Found event that has no hash {event}!"
 
             if not _block_hash in self.recorded_events:
-                LOG.info(
-                    f"New hash {event.block_hash_short} {len(self.recorded_events)}"
+                LOG.debug(
+                    f"New hash {event.block_hash_short}"
                 )
                 # A new hash is seen, make a new list to store its events in
                 self.recorded_events[_block_hash] = list()
@@ -255,7 +274,7 @@ class App:
             self.q.put(new_sample)
             # Add hash to right side of deque
             self.published_hashes.append(_block_hash)
-            if len(self.published_hashes) >= self.app_config.active_slot_coef * 3600:
+            if len(self.published_hashes) > self.app_config.active_slot_coef * 3600:
                 # Remove from left of deque
                 removed_hash = self.published_hashes.popleft()
                 # Delete events for hash from recorded_events
@@ -264,10 +283,7 @@ class App:
                     LOG.debug(f"Removed {removed_hash} from published_hashes")
                 else:
                     LOG.warning(f"Hash not found in recorded_events for deletion '{removed_hash}'")
-            LOG.debug(
-                f"Recorded blocks: {len(self.recorded_events.keys())} \n[{' '.join([ h[0:10] for h in self.recorded_events.keys()])}]"
-            )
-            LOG.debug(f"Published hash queue size {len(self.published_hashes)}")
+            LOG.debug(f"Recorded blocks {len(self.recorded_events.keys())} - Published blocks {len(self.published_hashes)}")
 
     def logevents(self):
         """Generator that "tails" the node log file and parses each. We are
@@ -293,6 +309,23 @@ class App:
         does the new file is opened.
 
         """
+
+        def _real_node_log() -> Path:
+            """Read the link that node_log points to and return the file path
+            """
+            while True:
+                node_log_link = self.app_config.node_logfile
+                if not node_log_link.exists():
+                    LOG.warning(f"Node log file does not exist '{node_log_link}'")
+                    time.sleep(10)
+                try:
+                    real_node_log = os.path.realpath(node_log_link, strict=True)
+                    # LOG.debug(f"Resolved {node_log_link} to {real_node_log}")
+                    return self.app_config.node_logdir.joinpath(real_node_log)
+                except OSError:
+                    LOG.warning(f"Real node log not found from link '{node_log_link}'")
+                    time.sleep(10)
+
         interesting_kinds = (
             LogEventKind.TRACE_DOWNLOADED_HEADER,
             LogEventKind.SEND_FETCH_REQUEST,
@@ -302,12 +335,7 @@ class App:
         )
         first_loop = True
         while True:
-            node_log = self.app_config.node_logfile
-            if not node_log.exists():
-                LOG.warning(f"{node_log} does not exist! Waiting for 10 seconds")
-                time.sleep(10)
-                continue
-            real_node_log = self.app_config.node_logdir.joinpath(os.readlink(node_log))
+            real_node_log = _real_node_log()
             same_file = True
             with open(real_node_log, "r") as fp:
                 # Only seek to the end of the file, if we just did a "fresh" start
@@ -319,10 +347,8 @@ class App:
                     new_line = fp.readline()
                     if not new_line:
                         # if no new_line is returned check if the symlink changed
-                        if real_node_log.name != os.readlink(node_log):
-                            LOG.debug(
-                                f"Symlink changed from {real_node_log.name} to {os.readlink(node_log)} "
-                            )
+                        if real_node_log.name != _real_node_log().name:
+                            LOG.debug( f"Symlink changed" )
                             same_file = False
                         time.sleep(0.1)
                         continue
