@@ -14,7 +14,8 @@ import paho.mqtt.client as mqtt
 from blockperf import __version__ as blockperf_version
 from blockperf import logger_name
 from blockperf.config import AppConfig
-from blockperf.sampling import BlockSample, LogEvent, LogEventKind
+from blockperf.blocksample import BlockSample
+from blockperf.logevent import LogEventKind, LogEvent
 
 LOG = logging.getLogger(logger_name)
 MQTTLOG = logging.getLogger("MQTT")

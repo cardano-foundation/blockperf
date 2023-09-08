@@ -1,7 +1,8 @@
-"""App Configuration based on pythons stdlib configparser module.
-Why configparser? Because its simple. There is a blockperf.ini file in the
-contrib/ folder which has all options and a short explanation of what they do.
 """
+App Configuration is done either via Environment variables or the stdlib
+configparser module.
+"""
+
 import ipaddress
 import json
 import os
@@ -66,8 +67,15 @@ class AppConfig:
     @property
     def mqtt_publish_timeout(self) -> int:
         """Timeout for publishing new blockperfs to broker"""
-        mqtt_publish_timeout = int(os.getenv("BLOCKPERF_MQTT_PUBLISH_TIMEOUT", 5))
-        return mqtt_publish_timeout
+        mqtt_publish_timeout = os.getenv(
+            "BLOCKPERF_MQTT_PUBLISH_TIMEOUT",
+            self.config_parser.get(
+                "DEFAULT",
+                "mqtt_publish_timeout",
+                fallback=5,
+            )
+        )
+        return int(mqtt_publish_timeout)
 
     @property
     def node_configdir(self) -> Path:
@@ -200,7 +208,14 @@ class AppConfig:
 
     @property
     def masked_addresses(self) -> list:
-        masked_addresses = os.getenv("BLOCKPERF_MASKED_ADDRESSES", None)
+        masked_addresses = os.getenv(
+            "BLOCKPERF_MASKED_ADDRESSES",
+            self.config_parser.get(
+                "DEFAULT",
+                "masked_addresses",
+                fallback=None,
+            )
+        )
         if masked_addresses:
             _validated_addresses = list()
             # String split and return list

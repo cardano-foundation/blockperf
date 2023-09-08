@@ -1,9 +1,167 @@
-from blockperf.logevent import LogEventKind
-from blockperf.logevent import LogEvent
+
+import os
+import pytest
+from datetime import datetime
+from blockperf.config import AppConfig, ConfigError
+from blockperf.blocksample import BlockSample
+from blockperf.logevent import LogEventKind, LogEvent
+
+sample01 =  BlockSample([
+    LogEvent.from_logline("""{"app":[],"at":"2023-09-01T14:14:24.55Z",
+                        "data":{
+                            "deltaq":{"G":2.472594034e-2},
+                            "head":"dda846c34c0f219c26ded0994ef0beace1dea54487d60e0b4afe5f6f4fe3d246",
+                            "kind":"SendFetchRequest","length":1,
+                            "peer":{
+                                "local":{"addr":"192.168.0.137","port":"3001"},
+                                "remote":{"addr":"3.11.145.214","port":"3002"}
+                            }
+                        },"env":"8.1.1:ea2c0","host":"mainnetf","loc":null,"msg":"","ns":["cardano.node.BlockFetchClient"],"pid":"1662080","sev":"Info","thread":"17608"}"""),
+    LogEvent.from_logline("""{"app":[],"at":"2023-09-01T14:14:24.56Z",
+                        "data":{
+                            "deltaq":{"G":8.211184152e-2},
+                            "head":"dda846c34c0f219c26ded0994ef0beace1dea54487d60e0b4afe5f6f4fe3d246",
+                            "kind":"SendFetchRequest","length":1,
+                            "peer":{
+                                "local":{"addr":"192.168.0.137","port":"3001"},
+                                "remote":{"addr":"66.45.255.78","port":"6000"}
+                            }
+                        },"env":"8.1.1:ea2c0","host":"mainnetf","loc":null,"msg":"","ns":["cardano.node.BlockFetchClient"],"pid":"1662080","sev":"Info","thread":"19105"}"""),
+    LogEvent.from_logline("""{"app":[],"at":"2023-09-01T14:14:24.58Z",
+                        "data":{
+                            "block":"dda846c34c0f219c26ded0994ef0beace1dea54487d60e0b4afe5f6f4fe3d246",
+                            "blockNo":9233842,"kind":"ChainSyncClientEvent.TraceDownloadedHeader",
+                            "peer":{
+                                "local":{"addr":"192.168.0.137","port":"3001"},
+                                "remote":{"addr":"3.216.77.109","port":"3001"}
+                            },
+                            "slot":102011373
+                        },"env":"8.1.1:ea2c0","host":"mainnetf","loc":null,"msg":"","ns":["cardano.node.ChainSyncClient"],"pid":"1662080","sev":"Info","thread":"19982"}"""),
+    LogEvent.from_logline("""{"app":[],"at":"2023-09-01T14:14:24.61Z",
+                        "data":{
+                            "block":"dda846c34c0f219c26ded0994ef0beace1dea54487d60e0b4afe5f6f4fe3d246",
+                            "delay":0.613318494,"kind":"CompletedBlockFetch",
+                            "peer":{
+                                "local":{"addr":"192.168.0.137","port":"3001"},
+                                "remote":{"addr":"3.11.145.214","port":"3002"}
+                            },
+                            "size":89587
+                        },"env":"8.1.1:ea2c0","host":"mainnetf","loc":null,"msg":"","ns":["cardano.node.BlockFetchClient"],"pid":"1662080","sev":"Info","thread":"17607"}"""),
+    LogEvent.from_logline("""{"app":[],"at":"2023-09-01T14:14:24.63Z",
+                        "data":{
+                            "block":"dda846c34c0f219c26ded0994ef0beace1dea54487d60e0b4afe5f6f4fe3d246",
+                            "blockNo":9233842,
+                            "kind":"ChainSyncClientEvent.TraceDownloadedHeader",
+                            "peer":{
+                                "local":{"addr":"192.168.0.137","port":"3001"},
+                                "remote":{"addr":"18.158.165.66","port":"3001"}
+                            },
+                            "slot":102011373
+                        },"env":"8.1.1:ea2c0","host":"mainnetf","loc":null,"msg":"","ns":["cardano.node.ChainSyncClient"],"pid":"1662080","sev":"Info","thread":"20525"}"""),
+    LogEvent.from_logline("""{"app":[],"at":"2023-09-01T14:14:24.67Z",
+                        "data":{
+                            "chainLengthDelta":1,
+                            "kind":"TraceAddBlockEvent.AddedToCurrentChain",
+                            "newtip":"dda846c34c0f219c26ded0994ef0beace1dea54487d60e0b4afe5f6f4fe3d246@102011373"
+                          },"env":"8.1.1:ea2c0","host":"mainnetf","loc":null,"msg":"","ns":["cardano.node.ChainDB"],"pid":"1662080","sev":"Notice","thread":"191"}"""),
+    ], app_config=AppConfig(None))
+
+empty_sample = BlockSample(events=[], app_config=AppConfig(None))
 
 
-loglines = """
-{"app":[],"at":"2023-09-01T14:14:24.55Z","data":{"kind":"AddedFetchRequest","peer":{"local":{"addr":"192.168.0.137","port":"3001"},"remote":{"addr":"3.11.145.214","port":"3002"}}},"env":"8.1.1:ea2c0","host":"mainnetf","loc":null,"msg":"","ns":["cardano.node.BlockFetchClient"],"pid":"1662080","sev":"Info","thread":"201"}
+def test_sample01():
+    fth = sample01.first_trace_header
+    assert fth
+
+    fcb = sample01.first_completed_block
+    assert fcb
+
+    frcb = sample01.fetch_request_completed_block
+    assert frcb
+
+    hra = sample01.header_remote_addr
+    assert hra == "3.216.77.109"
+
+    hrp = sample01.header_remote_port
+    assert hrp == "3001"
+
+    sn = sample01.slot_num
+    assert sn == 102011373
+
+    st = sample01.slot_time
+    assert st
+    assert type(st) == datetime
+
+    hd = sample01.header_delta
+    assert hd > 0
+    assert hd == 580
+
+    bn = sample01.block_num
+    assert bn > 0
+    assert bn == 9233842
+
+    bh = sample01.block_hash
+    assert not bh == ""
+    assert bh == "dda846c34c0f219c26ded0994ef0beace1dea54487d60e0b4afe5f6f4fe3d246"
+
+    bhs = sample01.block_hash_short
+    assert not bhs == ""
+    assert bhs == "dda846c34c"
+
+    bs = sample01.block_size
+    assert bs > 0
+    assert bs == 89587
+
+    bd = sample01.block_delay
+    assert bd > 0.0
+    assert bd == 0.613318494
+
+    brqd = sample01.block_request_delta
+    assert brqd
+    assert brqd == -30
+
+    brsd = sample01.block_response_delta
+    assert brsd
+    assert brsd == 60
+
+    ba = sample01.block_adopt
+    assert ba
+    assert ba.kind == LogEventKind.ADDED_TO_CURRENT_CHAIN
+
+    bad = sample01.block_adopt_delta
+    assert bad > 0
+    assert bad == 60
+
+    bad = sample01.block_g
+    assert not bad == "0"
+    assert bad == 0.02472594034
+
+    bad = sample01.block_remote_addr
+    assert not bad == ""
+    assert bad == "3.11.145.214"
+
+    bad = sample01.block_remote_port
+    assert not bad == ""
+    assert bad == "3002"
+
+    bad = sample01.block_local_address
+    assert not bad == ""
+    assert bad == "192.168.0.137"
+
+    bad = sample01.block_local_port
+    assert not bad == ""
+    assert bad == "3001"
+
+def test_empty_sample():
+    fth = empty_sample.first_trace_header
+    assert not fth
+    fcb = empty_sample.first_completed_block
+    assert not fcb
+    frcb = empty_sample.fetch_request_completed_block
+    assert not frcb
+
+
+"""
 {"app":[],"at":"2023-09-01T14:14:24.55Z","data":{"kind":"AcknowledgedFetchRequest","peer":{"local":{"addr":"192.168.0.137","port":"3001"},"remote":{"addr":"3.11.145.214","port":"3002"}}},"env":"8.1.1:ea2c0","host":"mainnetf","loc":null,"msg":"","ns":["cardano.node.BlockFetchClient"],"pid":"1662080","sev":"Info","thread":"17608"}
 {"app":[],"at":"2023-09-01T14:14:24.55Z","data":{"deltaq":{"G":2.472594034e-2},"head":"dda846c34c0f219c26ded0994ef0beace1dea54487d60e0b4afe5f6f4fe3d246","kind":"SendFetchRequest","length":1,"peer":{"local":{"addr":"192.168.0.137","port":"3001"},"remote":{"addr":"3.11.145.214","port":"3002"}}},"env":"8.1.1:ea2c0","host":"mainnetf","loc":null,"msg":"","ns":["cardano.node.BlockFetchClient"],"pid":"1662080","sev":"Info","thread":"17608"}
 {"app":[],"at":"2023-09-01T14:14:24.55Z","data":{"kind":"PeersFetch","peers":[{"declined":"FetchDeclineChainNotPlausible","kind":"FetchDecision declined","peer":{"local":{"addr":"192.168.0.137","port":"3001"},"remote":{"addr":"35.72.88.112","port":"6000"}}},{"declined":"FetchDeclineChainNotPlausible","kind":"FetchDecision declined","peer":{"local":{"addr":"192.168.0.137","port":"3001"},"remote":{"addr":"18.138.253.119","port":"1338"}}},{"declined":"FetchDeclineChainNotPlausible","kind":"FetchDecision declined","peer":{"local":{"addr":"192.168.0.137","port":"3001"},"remote":{"addr":"107.23.61.45","port":"3001"}}},{"declined":"FetchDeclineChainNotPlausible","kind":"FetchDecision declined","peer":{"local":{"addr":"192.168.0.137","port":"3001"},"remote":{"addr":"62.171.132.72","port":"3001"}}},{"declined":"FetchDeclineChainNotPlausible","kind":"FetchDecision declined","peer":{"local":{"addr":"192.168.0.137","port":"3001"},"remote":{"addr":"3.216.77.109","port":"3001"}}},{"declined":"FetchDeclineChainNotPlausible","kind":"FetchDecision declined","peer":{"local":{"addr":"192.168.0.137","port":"3001"},"remote":{"addr":"209.250.239.195","port":"6000"}}},{"declined":"FetchDeclineChainNotPlausible","kind":"FetchDecision declined","peer":{"local":{"addr":"192.168.0.137","port":"3001"},"remote":{"addr":"3.109.88.104","port":"3001"}}},{"declined":"FetchDeclineChainNotPlausible","kind":"FetchDecision declined","peer":{"local":{"addr":"192.168.0.137","port":"3001"},"remote":{"addr":"18.222.59.152","port":"3001"}}},{"declined":"FetchDeclineChainNotPlausible","kind":"FetchDecision declined","peer":{"local":{"addr":"192.168.0.137","port":"3001"},"remote":{"addr":"66.45.255.78","port":"6000"}}},{"declined":"FetchDeclineChainNotPlausible","kind":"FetchDecision declined","peer":{"local":{"addr":"192.168.0.137","port":"3001"},"remote":{"addr":"13.51.62.37","port":"3001"}}},{"declined":"FetchDeclineChainNotPlausible","kind":"FetchDecision declined","peer":{"local":{"addr":"192.168.0.137","port":"3001"},"remote":{"addr":"18.158.165.66","port":"3001"}}},{"declined":"FetchDeclineInFlightThisPeer","kind":"FetchDecision declined","peer":{"local":{"addr":"192.168.0.137","port":"3001"},"remote":{"addr":"3.11.145.214","port":"3002"}}},{"declined":"FetchDeclineChainNotPlausible","kind":"FetchDecision declined","peer":{"local":{"addr":"192.168.0.137","port":"3001"},"remote":{"addr":"18.170.158.171","port":"3001"}}},{"declined":"FetchDeclineChainNotPlausible","kind":"FetchDecision declined","peer":{"local":{"addr":"192.168.0.137","port":"3001"},"remote":{"addr":"81.173.113.182","port":"6000"}}},{"declined":"FetchDeclineChainNotPlausible","kind":"FetchDecision declined","peer":{"local":{"addr":"192.168.0.137","port":"3001"},"remote":{"addr":"159.69.15.8","port":"3005"}}},{"declined":"FetchDeclineChainNotPlausible","kind":"FetchDecision declined","peer":{"local":{"addr":"192.168.0.137","port":"3001"},"remote":{"addr":"23.88.127.17","port":"5001"}}},{"declined":"FetchDeclineChainNotPlausible","kind":"FetchDecision declined","peer":{"local":{"addr":"192.168.0.137","port":"3001"},"remote":{"addr":"202.61.245.122","port":"55001"}}},{"declined":"FetchDeclineChainNotPlausible","kind":"FetchDecision declined","peer":{"local":{"addr":"192.168.0.137","port":"3001"},"remote":{"addr":"5.45.109.162","port":"5250"}}},{"declined":"FetchDeclineChainNotPlausible","kind":"FetchDecision declined","peer":{"local":{"addr":"192.168.0.137","port":"3001"},"remote":{"addr":"135.125.145.15","port":"6000"}}},{"kind":"FetchDecision results","length":"1","peer":{"local":{"addr":"192.168.0.137","port":"3001"},"remote":{"addr":"3.215.7.178","port":"3001"}}}]},"env":"8.1.1:ea2c0","host":"mainnetf","loc":null,"msg":"","ns":["cardano.node.BlockFetchDecision"],"pid":"1662080","sev":"Info","thread":"201"}
@@ -79,33 +237,3 @@ loglines = """
 {"app":[],"at":"2023-09-01T14:14:25.10Z","data":{"kind":"ChainSyncClientEvent.TraceRolledBack","peer":{"local":{"addr":"192.168.0.137","port":"3001"},"remote":{"addr":"209.250.239.195","port":"6000"}},"tip":{"headerHash":"ae06d3a31a7dbb3af577ed0271723fc24cd17ef6e3e9be58b7631b1ac3ebc1e0","kind":"BlockPoint","slot":102011319}},"env":"8.1.1:ea2c0","host":"mainnetf","loc":null,"msg":"","ns":["cardano.node.ChainSyncClient"],"pid":"1662080","sev":"Notice","thread":"9497"}
 {"app":[],"at":"2023-09-01T14:14:25.10Z","data":{"block":"fa927c7195b1ffbd5a231cf7bbb8f34af0ed77d0d089a892f5f8ffa79a3c090b","delay":1.105331477,"kind":"CompletedBlockFetch","peer":{"local":{"addr":"192.168.0.137","port":"3001"},"remote":{"addr":"18.138.253.119","port":"1338"}},"size":89587},"env":"8.1.1:ea2c0","host":"mainnetf","loc":null,"msg":"","ns":["cardano.node.BlockFetchClient"],"pid":"1662080","sev":"Info","thread":"20685"}
 """
-
-def test_from_logline():
-    new_line = """{"app":[],"at":"2023-09-01T14:14:24.58Z","data":{"block":"dda846c34c0f219c26ded0994ef0beace1dea54487d60e0b4afe5f6f4fe3d246","blockNo":9233842,"kind":"ChainSyncClientEvent.TraceDownloadedHeader","peer":{"local":{"addr":"192.168.0.137","port":"3001"},"remote":{"addr":"3.216.77.109","port":"3001"}},"slot":102011373},"env":"8.1.1:ea2c0","host":"mainnetf","loc":null,"msg":"","ns":["cardano.node.ChainSyncClient"],"pid":"1662080","sev":"Info","thread":"19982"}"""
-    event = LogEvent.from_logline(new_line)
-    assert event
-    assert event.kind == LogEventKind.TRACE_DOWNLOADED_HEADER
-    assert event.block_hash == "dda846c34c0f219c26ded0994ef0beace1dea54487d60e0b4afe5f6f4fe3d246"
-    assert event.block_hash_short == "dda846c34c"
-
-def test_from_logline_address_masking():
-    new_line = """{"app":[],"at":"2023-09-01T14:14:24.56Z","data":{"block":"dda846c34c0f219c26ded0994ef0beace1dea54487d60e0b4afe5f6f4fe3d246","blockNo":9233842,"kind":"ChainSyncClientEvent.TraceDownloadedHeader","peer":{"local":{"addr":"192.168.0.137","port":"3001"},"remote":{"addr":"66.45.255.78","port":"6000"}},"slot":102011373},"env":"8.1.1:ea2c0","host":"mainnetf","loc":null,"msg":"","ns":["cardano.node.ChainSyncClient"],"pid":"1662080","sev":"Info","thread":"19113"}"""
-    event = LogEvent.from_logline(new_line, masked_addresses=list())
-    assert event
-    assert event.remote_addr == "66.45.255.78" # No substituion should have taken place
-    masked_addresses = ["66.45.255.78", "55.4.152.87"]
-    event = LogEvent.from_logline(new_line, masked_addresses=masked_addresses)
-    assert event
-    assert event.remote_addr == "x.x.x.x" # IP Address should be masked
-
-def test_block_hash():
-    new_line = """{"app":[],"at":"2023-09-01T14:14:25.10Z","data":{"kind":"ChainSyncClientEvent.TraceRolledBack","peer":{"local":{"addr":"192.168.0.137","port":"3001"},"remote":{"addr":"209.250.239.195","port":"6000"}},"tip":{"headerHash":"ae06d3a31a7dbb3af577ed0271723fc24cd17ef6e3e9be58b7631b1ac3ebc1e0","kind":"BlockPoint","slot":102011319}},"env":"8.1.1:ea2c0","host":"mainnetf","loc":null,"msg":"","ns":["cardano.node.ChainSyncClient"],"pid":"1662080","sev":"Notice","thread":"9497"}"""
-    event = LogEvent.from_logline(new_line)
-    assert event
-    assert event.block_hash == ""
-    new_line = """{"app":[],"at":"2023-09-01T14:14:24.83Z","data":{"block":"dda846c34c0f219c26ded0994ef0beace1dea54487d60e0b4afe5f6f4fe3d246","delay":0.832114369,"kind":"CompletedBlockFetch","peer":{"local":{"addr":"192.168.0.137","port":"3001"},"remote":{"addr":"3.215.7.178","port":"3001"}},"size":89587},"env":"8.1.1:ea2c0","host":"mainnetf","loc":null,"msg":"","ns":["cardano.node.BlockFetchClient"],"pid":"1662080","sev":"Info","thread":"484"}"""
-    event = LogEvent.from_logline(new_line)
-    assert event
-    assert event.block_hash == "dda846c34c0f219c26ded0994ef0beace1dea54487d60e0b4afe5f6f4fe3d246"
-    assert event.block_hash_short == "dda846c34c"
-
