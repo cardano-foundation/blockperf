@@ -6,7 +6,84 @@ to get measurements of block propagation in the network.
 The data created from the logs will be sent to an MQTT Broker and collected for
 further analysis. The Broker currently runs on AWS' IoT Core Platform.
 
-## Installation
+## Configuration of cardano-node
+
+For blockperf to be able to parse the logfiles you need to change the following
+in the cardano-node configuration file.
+
+* Make the node log to a json file
+
+We do want to support a journald in blockperf, but for now we need to have
+a file on disk that the cardano-node logs to.
+
+```json
+"defaultScribes": [
+    [
+      "FileSK",
+      "/opt/cardano/cnode/logs/node.json"
+    ]
+]
+...
+"setupScribes": [
+    {
+    "scFormat": "ScJson",
+    "scKind": "FileSK",
+    "scName": "/opt/cardano/cnode/logs/node.json",
+    }
+]
+```
+
+* Enable a bunch of tracers
+
+I am not aware of a reference of all the trace options in the config.
+But basically what you need to enable for now is the following.
+
+```json
+"TraceAcceptPolicy": true,
+"TraceBlockFetchClient": true,
+"TraceBlockFetchDecisions": true,
+"TraceBlockFetchProtocol": false,
+"TraceBlockFetchProtocolSerialised": false,
+"TraceBlockFetchServer": false,
+"TraceChainDb": true,
+"TraceChainSyncBlockServer": false,
+"TraceChainSyncClient": true,
+"TraceChainSyncHeaderServer": false,
+"TraceChainSyncProtocol": false,
+"TraceConnectionManager": true,
+"TraceDNSResolver": true,
+"TraceDNSSubscription": true,
+"TraceDiffusionInitialization": true,
+"TraceErrorPolicy": true,
+"TraceForge": true,
+"TraceHandshake": false,
+"TraceInboundGovernor": true,
+"TraceIpSubscription": true,
+"TraceLedgerPeers": true,
+"TraceLocalChainSyncProtocol": false,
+"TraceLocalErrorPolicy": true,
+"TraceLocalHandshake": false,
+"TraceLocalRootPeers": true,
+"TraceLocalTxSubmissionProtocol": false,
+"TraceLocalTxSubmissionServer": false,
+"TraceMempool": true,
+"TraceMux": false,
+"TracePeerSelection": true,
+"TracePeerSelectionActions": true,
+"TracePublicRootPeers": true,
+"TraceServer": true,
+"TraceTxInbound": false,
+"TraceTxOutbound": false,
+"TraceTxSubmissionProtocol": false,
+"TracingVerbosity": "NormalVerbosity",
+"TurnOnLogMetrics": true,
+"TurnOnLogging": true,
+```
+
+That is taken from the original blockperf.sh implementation.
+https://github.com/cardano-community/guild-operators/blob/alpha/scripts/cnode-helper-scripts/blockPerf.sh
+
+## Installaing blockperf
 
 * Below are the typical steps you would do to get it up and running
 * It should not be that hard, clone the python code and get it to run
@@ -37,7 +114,9 @@ https://docs.python.org/3/tutorial/venv.html
 > Install via pypi.org is not a thing until now, but i definetly want to
 > have it at some point
 
-## Configuration
+
+
+## Configuration of blockperf
 
 Blockperf needs some configuration to work. You can either write an ini
 file for that or provide the values via environment variables.
