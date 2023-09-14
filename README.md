@@ -1,50 +1,52 @@
 # Cardano blockperf
 
-Cardano blockperf is a tool that measures block propagation times in the network
-as seen from the local node. It reads the cardano-node logs and determines
-timings of blocks that are produced and distributed in the network.
+Cardano blockperf is a tool that constantly reads the cardano-node logfiles
+to get measurements of block propagation in the network.
 
 The data created from the logs will be sent to an MQTT Broker and collected for
 further analysis. The Broker currently runs on AWS' IoT Core Platform.
 
 ## Installation
 
-You will need pythons venv module installed.
-https://packages.ubuntu.com/kinetic/python3-venv
-
-* Clone repositoy, create virtualenv and install package
+* Below are the typical steps you would do to get it up and running
+* It should not be that hard, clone the python code and get it to run
+* You dont need to use pythons venv module but i would recommend you do.
 
 ```bash
+# Create the folder you want blockperf to live in, cd into it and clone the repo
+#
 mkdir -p /opt/blockperf
-cd opt/blockperf
-git clone git@github.com:cardano-foundation/blockperf.git
+cd /opt/blockperf
+git clone git@github.com:cardano-foundation/blockperf.git .
 
-# cd into that directory and run the install script
-cd blockperf
+# Create the venv, activate it and install blockperf via pip
 python3 -m venv venv
 source venv/bin/activate
 pip install .
+
+# Test it by issuing the command, it should print some help ...
+blockperf --help
 ```
 
-This will create a virtual environment in `venv/`and install blockperf in it.
-You will need to activate the environment everytime you want to work with
-blockperf. See docs if you are new to virtual environments:
+This will create a virtual environment in `/opt/blockperf/venv/`and install
+blockperf in it. You will need to activate the environment everytime you
+want to work with blockperf. See docs if you are new to virtual environments:
 https://docs.python.org/3/tutorial/venv.html
 
-* Install via pypi.org
+> **Note**
+> Install via pypi.org is not a thing until now, but i definetly want to
+> have it at some point
 
-Installing this package via pypi will eventually become available. Currently
-installing from source is the only option.
+## Configuration
 
-## Usage/Configuration
+Blockperf needs some configuration to work. You can either write an ini
+file for that or provide the values via environment variables.
 
-Blockperf needs some configuration to work.
-
-* Via environment variables:
+**With environment variables**
 
 ```bash
 # The following are all required to operate
-# Point to your local node config
+# Point to your local cardano-node config
 BLOCKPERF_NODE_CONFIG="/opt/cardano/cnode/files/config.json"
 # The ip address your relay is reachable at
 BLOCKPERF_RELAY_PUBLIC_IP="x.x.x.x"
@@ -66,32 +68,39 @@ BLOCKPERF_TOPIC_BASE="blockperf"
 # BLOCKPERF_BROKER_URL="a12j2zhynbsgdv-ats.iot.eu-central-1.amazonaws.com"
 ```
 
-* Via an ini file
+**With ini file**
 
-All the values
+Write a file blockperf.ini. The config values are the same as the env vars
+except being lower case without the leading `BLOCKPERF_`. All values must
+reside in the DEFAULT section of the file.
 
 ```ini
 [DEFAULT]
 node_config=/opt/cardano/cnode/files/config.json
-relay_public_ip = 213.216.27.62
-operator = devmanuel
-client_cert = /home/msch/src/cf/blockperf.py/tmp/devmanuel-certificate.pem
-client_key = /home/msch/src/cf/blockperf.py/tmp/devmanuel-private.key
+relay_public_ip = x.x.x.x
+operator = xx
+client_cert = /path/to/certificate.pem
+client_key = /path/to/private.key
 topic_base = blockperf
 ```
 
-All values must reside in the DEFAULT section of the file. The names are similar
-to the variables with the leading BLOCKPERF_ and written in lowercase.
+## Runnin blockperf
+
+
+
+**From the command line**
 
 ```bash
-blockperf run   # To use the environmentvariables for config
-blockperf run /path/to/config.ini   # to use the ini configuration
+# If you have set up the env vars
+blockperf run
+# Or specify the ini file
+blockperf run /path/to/config.ini
 ```
 
-## Writing a service unit
+**As a systemd service**
 
 See a simple example of the service unit below. Remember to set the
-executable to blockperf within the environment you have installed it in.
+executable to blockperf within the environment you have installed it in!
 
 ```
 [Unit]
@@ -116,6 +125,7 @@ values.
 
 ## Receive client identifier, certificate and key
 
-While we do plan to provide a more automated aproach it is currently a very manual
+Our plan is to have a somehwat automated process that leverages CIP-22 to
+have SPOs be able to identify themselves and retrieve certificates.
+However, that is not in place right now so currently it is a  very manual
 approach. Just ping me (Manuel) if you need to get one or create a new one.
-

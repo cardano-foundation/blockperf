@@ -46,10 +46,7 @@ class AppConfig:
                 fallback="/opt/cardano/cnode/files/config.json",
             ),
         )
-        node_config = Path(node_config_file)
-        if not node_config.exists():
-            raise ConfigError(f"Could not open {node_config_file}")
-        return node_config
+        return Path(node_config_file)
 
     @property
     def node_config(self) -> dict:

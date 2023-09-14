@@ -60,19 +60,19 @@ class BlockSample:
                               # Take deltaq.G from that FetchRequest
     """
 
-    tace_events = list()
+    trace_events = list()
     app_config: AppConfig
 
     def __init__(self, events, app_config: AppConfig) -> None:
         # Make sure they are order by their time
         self.app_config = app_config
         events.sort(key=lambda x: x.at)
-        self.tace_events = events
+        self.trace_events = events
 
     @property
     def first_trace_header(self) -> Union[LogEvent, None]:
         """Returnms first TRACE_DOWNLOADED_HEADER received"""
-        for event in self.tace_events:
+        for event in self.trace_events:
             if event.kind == LogEventKind.TRACE_DOWNLOADED_HEADER:
                 return event
         # If there is no TRACE_DOWNLOADED_HEADER, we cant even figure out block_num or block_hash (currently)
@@ -82,7 +82,7 @@ class BlockSample:
     @property
     def first_completed_block(self) -> Union[LogEvent, None]:
         """Returns first COMPLETED_BLOCK_FETCH received"""
-        for event in self.tace_events:
+        for event in self.trace_events:
             if event.kind == LogEventKind.COMPLETED_BLOCK_FETCH:
                 return event
         LOG.warning(f"No first {LogEventKind.COMPLETED_BLOCK_FETCH}; BlockNo: {self.block_num} Hash: {self.block_hash}")
@@ -94,7 +94,7 @@ class BlockSample:
         if not (fcb := self.first_completed_block):
             return None
         for event in filter(
-            lambda x: x.kind == LogEventKind.SEND_FETCH_REQUEST, self.tace_events
+            lambda x: x.kind == LogEventKind.SEND_FETCH_REQUEST, self.trace_events
         ):
             if (
                 event.remote_addr == fcb.remote_addr
@@ -213,7 +213,7 @@ class BlockSample:
     @property
     def block_adopt(self) -> Union[LogEvent, None]:
         """Return TraceEvent that this block was adopted with"""
-        for event in self.tace_events:
+        for event in self.trace_events:
             if event.kind in (
                 LogEventKind.ADDED_TO_CURRENT_CHAIN,
                 LogEventKind.SWITCHED_TO_A_FORK,

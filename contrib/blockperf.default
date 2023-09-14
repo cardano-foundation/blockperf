@@ -1,8 +1,8 @@
+# Example file for /etc/default/blockperf
 # To have this file loaded in a bash session use
 # set -a && source blockperf.env
-#
 BLOCKPERF_NODE_CONFIG="/opt/cardano/cnode/files/config.json"
-BLOCKPERF_RELAY_PUBLIC_IP="35.158.252.71"
+BLOCKPERF_RELAY_PUBLIC_IP="x.x.x.x"
 #BLOCKPERF_RELAY_PUBLIC_PORT="3001"
 BLOCKPERF_OPERATOR="devmanuel"
 BLOCKPERF_CLIENT_CERT="/home/ubuntu/devmanuel-certificate.pem"
