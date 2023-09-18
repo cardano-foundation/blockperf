@@ -33,36 +33,14 @@ a file on disk that the cardano-node logs to.
 ]
 ```
 
-* Enable a bunch of tracers
+* Enable tracers
 
-I am not aware of a reference of all the trace options in the config.
-But basically what you need to enable for now is the following.
+The default configuration files from https://book.world.dev.cardano.org/environments.html
+do already have tracers enabled. But you do need to enable the following as well:
 
 ```json
-"TraceAcceptPolicy": true,
-"TraceBlockFetchClient": true,
-"TraceBlockFetchDecisions": true,
-"TraceChainDb": true,
 "TraceChainSyncClient": true,
-"TraceConnectionManager": true,
-"TraceDNSResolver": true,
-"TraceDNSSubscription": true,
-"TraceDiffusionInitialization": true,
-"TraceErrorPolicy": true,
-"TraceForge": true,
-"TraceInboundGovernor": true,
-"TraceIpSubscription": true,
-"TraceLedgerPeers": true,
-"TraceLocalErrorPolicy": true,
-"TraceLocalRootPeers": true,
-"TraceMempool": true,
-"TracePeerSelection": true,
-"TracePeerSelectionActions": true,
-"TracePublicRootPeers": true,
-"TraceServer": true,
-"TracingVerbosity": "NormalVerbosity",
-"TurnOnLogMetrics": true,
-"TurnOnLogging": true,
+"TraceBlockFetchClient": true,
 ```
 
 

@@ -24,7 +24,7 @@ class AppConfig:
             self.config_parser.read(config_file)
         self.verbose = verbose
 
-    def validate_or_die(self):
+    def check_blockperf_config(self):
         """Try to check whether or not everything that is fundamentally needed
             is actually configured, by asking for its value and triggering
             the implemented failer if not found.
@@ -35,6 +35,13 @@ class AppConfig:
         self.relay_public_ip
         self.client_cert
         self.client_key
+
+        # Check for needed config values
+        assert self.node_config.get("TraceChainSyncClient", False) == True, "TraceChainSyncClient not enabled"
+        assert self.node_config.get("TraceBlockFetchClient", False) == True, "TraceBlockFetchClient not enabled"
+        # What are the other possible values? This should allow everything that is above Normal
+        assert self.node_config.get("TracingVerbosity", "") == "NormalVerbosity", "TracingVerbosity not enabled"
+
 
     @property
     def node_config_file(self) -> Path:
