@@ -23,12 +23,12 @@ a file on disk that the cardano-node logs to.
       "/opt/cardano/cnode/logs/node.json"
     ]
 ]
-...
+
 "setupScribes": [
     {
     "scFormat": "ScJson",
     "scKind": "FileSK",
-    "scName": "/opt/cardano/cnode/logs/node.json",
+    "scName": "/opt/cardano/cnode/logs/node.json"
     }
 ]
 ```
@@ -91,7 +91,7 @@ BLOCKPERF_NODE_CONFIG="/opt/cardano/cnode/files/config.json"
 # The ip address your relay is reachable at
 BLOCKPERF_RELAY_PUBLIC_IP="x.x.x.x"
 # your client identifier, will be given to you with the certificates
-BLOCKPERF_OPERATOR="XX"
+BLOCKPERF_NAME="XX"
 # path to your client certificate
 BLOCKPERF_CLIENT_CERT="XXX"
 # path to your client key
@@ -108,25 +108,7 @@ BLOCKPERF_TOPIC_BASE="blockperf"
 # BLOCKPERF_BROKER_URL="a12j2zhynbsgdv-ats.iot.eu-central-1.amazonaws.com"
 ```
 
-**With ini file**
-
-Write a file blockperf.ini. The config values are the same as the env vars
-except being lower case without the leading `BLOCKPERF_`. All values must
-reside in the DEFAULT section of the file.
-
-```ini
-[DEFAULT]
-node_config=/opt/cardano/cnode/files/config.json
-relay_public_ip = x.x.x.x
-operator = xx
-client_cert = /path/to/certificate.pem
-client_key = /path/to/private.key
-topic_base = blockperf
-```
-
-## Runnin blockperf
-
-
+## Running blockperf
 
 **From the command line**
 
