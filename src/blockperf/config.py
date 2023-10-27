@@ -2,7 +2,7 @@
 App Configuration is done either via Environment variables or the stdlib
 configparser module.
 """
-
+import sys
 import ipaddress
 import json
 import os
@@ -14,6 +14,12 @@ from typing import Union
 class ConfigError(Exception):
     pass
 
+# Maximum age of logfile event in seconds, events older then this are discarded
+MAX_EVENT_AGE = 600
+BROKER_URL = "a12j2zhynbsgdv-ats.iot.eu-central-1.amazonaws.com"
+BROKER_PORT = 8883
+BROKER_KEEPALIVE = 180
+ROOTDIR = Path(__file__).parent
 
 class AppConfig:
     config_parser: ConfigParser
@@ -37,11 +43,10 @@ class AppConfig:
         self.client_key
 
         # Check for needed config values
-        assert self.node_config.get("TraceChainSyncClient", False) == True, "TraceChainSyncClient not enabled"
-        assert self.node_config.get("TraceBlockFetchClient", False) == True, "TraceBlockFetchClient not enabled"
+        assert self.node_config.get("TraceChainSyncClient", False), "TraceChainSyncClient not enabled"
+        assert self.node_config.get("TraceBlockFetchClient", False), "TraceBlockFetchClient not enabled"
         # What are the other possible values? This should allow everything that is above Normal
         assert self.node_config.get("TracingVerbosity", "") == "NormalVerbosity", "TracingVerbosity not enabled"
-
 
     @property
     def node_config_file(self) -> Path:
@@ -59,14 +64,6 @@ class AppConfig:
     def node_config(self) -> dict:
         """Return Path to config.json file from env var, ini file or builtin default"""
         return json.loads(self.node_config_file.read_text())
-
-    @property
-    def max_event_age(self) -> int:
-        """Maximum age of events in logfile to be considered in seconds.
-        If the event is older then now - MAX_EVENT_AGE it is discarded.
-        """
-        max_event_age = int(os.getenv("BLOCKPERF_MAX_EVENT_AGE", 600))
-        return max_event_age
 
     @property
     def mqtt_publish_timeout(self) -> int:
@@ -177,38 +174,17 @@ class AppConfig:
         return name
 
     @property
-    def topic_base(self) -> str:
+    def topic_version(self) -> str:
         topic_base = os.getenv(
-            "BLOCKPERF_TOPIC_BASE",
-            self.config_parser.get("DEFAULT", "topic_base", fallback="develop"),
+            "BLOCKPERF_TOPIC_VERSION",
+            self.config_parser.get("DEFAULT", "topic_version", fallback="v1"),
         )
         return topic_base
 
     @property
-    def mqtt_broker_url(self) -> str:
-        broker_url = os.getenv(
-            "BLOCKPERF_BROKER_URL",
-            self.config_parser.get(
-                "DEFAULT",
-                "mqtt_broker_url",
-                fallback="a12j2zhynbsgdv-ats.iot.eu-central-1.amazonaws.com",
-            ),
-        )
-        return broker_url
-
-    @property
-    def mqtt_broker_port(self) -> int:
-        broker_port = int(
-            os.getenv(
-                "BLOCKPERF_BROKER_PORT",
-                self.config_parser.get("DEFAULT", "mqtt_broker_port", fallback=8883),
-            )
-        )
-        return broker_port
-
-    @property
     def topic(self) -> str:
-        return f"{self.topic_base}/{self.name}/{self.relay_public_ip}"
+        """"""
+        return f"cf/blockperf/{self.topic_version}/{self.network_magic}/{self.name}/{self.relay_public_ip}"
 
     @property
     def masked_addresses(self) -> list:
@@ -231,3 +207,15 @@ class AppConfig:
                     raise ConfigError(f"Given address {addr} is not a valid ip address")
             return _validated_addresses
         return list()
+
+    @property
+    def node_service_unit(self) -> str:
+        node_service_unit = os.getenv(
+            "BLOCKPERF_NODE_SERVICE_UNIT",
+            self.config_parser.get(
+                "DEFAULT",
+                "node_service_unit",
+                fallback="cardano-node.service",
+            )
+        )
+        return node_service_unit

@@ -4,7 +4,7 @@ import pytest
 from datetime import datetime
 from blockperf.config import AppConfig, ConfigError
 from blockperf.blocksample import BlockSample
-from blockperf.logevent import LogEventKind, LogEvent
+from blockperf.logger import LogEventKind, LogEvent
 
 sample01 =  BlockSample([
     LogEvent.from_logline("""{"app":[],"at":"2023-09-01T14:14:24.55Z",

@@ -1,3 +1,4 @@
+import sys
 import collections
 import json
 import logging
@@ -8,24 +9,41 @@ import time
 from pathlib import Path
 from datetime import datetime, timedelta
 from timeit import default_timer as timer
+from pprint import pprint
 
-import paho.mqtt.client as mqtt
+try:
+    from systemd import journal
+except ImportError:
+    sys.exit(
+        "This script needs python3-systemd package.\n"
+        "https://pypi.org/project/systemd-python/\n\n"
+    )
+
+try:
+    import paho.mqtt.client as mqtt
+    from paho.mqtt.properties import Properties
+    from paho.mqtt.packettypes import PacketTypes
+except ImportError:
+    sys.exit(
+        "This script needs paho-mqtt package.\n"
+        "https://pypi.org/project/paho-mqtt/\n\n"
+    )
 
 from blockperf import __version__ as blockperf_version
-from blockperf import logger_name
-from blockperf.config import AppConfig
+from blockperf.config import AppConfig, MAX_EVENT_AGE
 from blockperf.blocksample import BlockSample
-from blockperf.logevent import LogEventKind, LogEvent
+from blockperf.nodelogs import LogEventKind, LogEvent
+from blockperf.mqtt import MQTTClient
 
-LOG = logging.getLogger(logger_name)
-MQTTLOG = logging.getLogger("MQTT")
+
+logger = logging.getLogger(__name__)
 
 
 class App:
     q: queue.Queue
     app_config: AppConfig
     node_config: dict
-    _mqtt_client: mqtt.Client
+    mqtt_client: MQTTClient
 
     recorded_events = dict()  # holds a list of events for each block_hash
     published_hashes = collections.deque()
@@ -33,82 +51,31 @@ class App:
     def __init__(self, config: AppConfig) -> None:
         self.q = queue.Queue(maxsize=20)
         self.app_config = config
+        self.mqtt_client = MQTTClient()
+        self.mqtt_client.tls_set(
+            # ca_certs="/tmp/AmazonRootCA1.pem",
+            certfile=self.app_config.client_cert,
+            keyfile=self.app_config.client_key,
+        )
+        self.mqtt_client.run()
 
     def run(self):
         """Run the App by creating the two threads and starting them."""
         producer_thread = threading.Thread(target=self.blocksample_producer, args=())
         producer_thread.start()
-        # LOG.info("Producer thread started")
+        # logger.info("Producer thread started")
 
         # consumer = BlocklogConsumer(queue=self.q, app_config=self.app_config)
         consumer_thread = threading.Thread(target=self.blocksample_consumer, args=())
         consumer_thread.start()
-        # LOG.info("Consumer thread started")
+        # logger.info("Consumer thread started")
 
         # Blocks main thread until all joined threads are finished
-        LOG.info(f"App starting producer and consumer threads")
+        logger.info("App starting producer and consumer threads")
         producer_thread.join()
         consumer_thread.join()
-        LOG.info(f"App finished run().")
+        logger.info("App finished run().")
 
-    @property
-    def mqtt_client(self) -> mqtt.Client:
-        # Returns the mqtt client, or creates one if there is none
-        if not hasattr(self, "_mqtt_client"):
-            LOG.info("(Re)Creating new mqtt client")
-            # Every new client will start clean unless client_id is specified
-            self._mqtt_client = mqtt.Client(protocol=mqtt.MQTTv5)
-            self._mqtt_client.on_connect = self.on_connect_callback
-            self._mqtt_client.on_disconnect = self.on_disconnect_callback
-            self._mqtt_client.on_publish = self.on_publish_callback
-            self._mqtt_client.on_log = self.on_log
-
-            # tls_set has an argument 'ca_certs'. I used to provide a file
-            # whith one of the certificates from https://www.amazontrust.com/repository/
-            # But from readig the tls_set() code i suspect when i leave that out
-            # thessl.SSLContext will try to autodownload that CA!?
-            self._mqtt_client.tls_set(
-                # ca_certs="/tmp/AmazonRootCA1.pem",
-                certfile=self.app_config.client_cert,
-                keyfile=self.app_config.client_key,
-            )
-        return self._mqtt_client
-
-    def on_connect_callback(
-        self, client, userdata, flags, reasonCode, properties
-    ) -> None:
-        """Called when the broker responds to our connection request.
-        See paho.mqtt.client.py on_connect()"""
-        if not reasonCode == 0:
-            LOG.error("Connection error " + str(reasonCode))
-            self._mqtt_connected = False
-        else:
-            self._mqtt_connected = True
-
-    def on_disconnect_callback(self, client, userdata, reasonCode, properties) -> None:
-        """Called when disconnected from broker
-        See paho.mqtt.client.py on_disconnect()"""
-        LOG.error(f"Connection lost {reasonCode}")
-
-    def on_publish_callback(self, client, userdata, mid) -> None:
-        """Called when a message is actually received by the broker.
-        See paho.mqtt.client.py on_publish()"""
-        # There should be a way to know which messages belongs to which
-        # item in the queue and acknoledge that specifically
-        # self.q.task_done()
-        pass
-        # LOG.debug(f"Message {mid} published to broker")
-
-    def on_log(self, client, userdata, level, buf):
-        """
-        client:     the client instance for this callback
-        userdata:   the private user data as set in Client() or userdata_set()
-        level:      gives the severity of the message and will be one of
-                    MQTT_LOG_INFO, MQTT_LOG_NOTICE, MQTT_LOG_WARNING,
-                    MQTT_LOG_ERR, and MQTT_LOG_DEBUG.
-        buf:        the message itself
-        """
-        MQTTLOG.debug(f"{level} - {buf}")
 
     def print_block_stats(self, blocksample: BlockSample) -> None:
         """
@@ -142,7 +109,7 @@ class App:
             f"Size...... {blocksample.block_size} bytes\n"
             f"Delay..... {blocksample.block_delay} sec\n\n"
         )
-        LOG.info("\n" + msg)
+        logger.info("\n" + msg)
 
     def mqtt_payload_from(self, sample: BlockSample) -> dict:
         """Returns a dictionary for use as payload when publishing the sample."""
@@ -167,42 +134,49 @@ class App:
         }
         return payload
 
-
     def blocksample_consumer(self):
         while True:
             try:
+                print("Call consumer")
                 self._blocksample_consumer()
             except Exception:
-                LOG.exception("Exception in blocksample_consumer; Restarting Loop")
+                logger.exception("Exception in blocksample_consumer; Restarting Loop")
 
     def _blocksample_consumer(self):
-        """Consumer thread that listens to the queue and published each sample
-        the the consumer puts into it."""
-        self.mqtt_client
-        broker_url, broker_port = (
-            self.app_config.mqtt_broker_url,
-            self.app_config.mqtt_broker_port,
-        )
-        LOG.debug(f"Connecting to {broker_url}:{broker_port}")
-        self.mqtt_client.connect(broker_url, broker_port)
-        self.mqtt_client.loop_start()  # Starts thread for pahomqtt to process messages
+        """
+        Consumer thread that listens to the queue and published each sample the the consumer puts into it.
+        """
+        #self.mqtt_client
+        #broker_url, broker_port = (
+        #    self.app_config.mqtt_broker_url,
+        #    self.app_config.mqtt_broker_port,
+        #)
+        #logger.debug(f"Connecting to {broker_url}:{broker_port}")
+        #self.mqtt_client.connect(broker_url, broker_port)
+        #self.mqtt_client.loop_start()  # Starts thread for pahomqtt to process messages
+
         # Sometimes the connect took a moment to settle. To not have
         # the consumer accept messages (and not be able to publish)
         # i decided to ensure the connection is established this way
         while not self.mqtt_client.is_connected:
-            LOG.debug("Waiting for mqtt connection ... ")
+            logger.debug("Waiting for mqtt connection ... ")
             time.sleep(0.5)  # Wait until connected to broker
 
         while True:
-            LOG.debug(f"Waiting for next item in queue, Current size: {self.q.qsize()}")
+            logger.debug(f"Waiting for next item in queue, Current size: {self.q.qsize()}")
             blocksample = self.q.get()
             self.print_block_stats(blocksample)
 
             payload = self.mqtt_payload_from(blocksample)
-            LOG.debug(json.dumps(payload, indent=4, sort_keys=True, ensure_ascii=False))
+            logger.debug(json.dumps(payload, indent=4, sort_keys=True, ensure_ascii=False))
             start_publish = timer()
+
+            publish_properties = Properties(PacketTypes.PUBLISH)
+            publish_properties.MessageExpiryInterval=3600
             message_info = self.mqtt_client.publish(
-                topic=self.app_config.topic, payload=json.dumps(payload, default=str)
+                topic=f"{self.app_config.topic}/{blocksample.block_hash}",
+                payload=json.dumps(payload, default=str),
+                properties=publish_properties
             )
             # blocks until timeout is reached
             message_info.wait_for_publish(self.app_config.mqtt_publish_timeout)
@@ -210,18 +184,19 @@ class App:
             publish_time = end_publish - start_publish
             self.last_slot_time = blocksample.slot_time
             if self.app_config.verbose:
-                LOG.info(
+                logger.info(
                     f"Published {blocksample.block_hash_short} with mid='{message_info.mid}' to {self.app_config.topic} in {publish_time}"
                 )
             if publish_time > float(self.app_config.mqtt_publish_timeout):
-                LOG.error("Publish timeout reached")
+                logger.error("Publish timeout reached")
 
     def blocksample_producer(self):
         while True:
             try:
+                print("calling producer")
                 self._blocksample_producer()
             except Exception:
-                LOG.exception("Exception in blocksample_producer; Restarting Loop")
+                logger.exception("Exception in blocksample_producer; Restarting Loop")
 
     def _blocksample_producer(self):
         """Producer thread that reads the logfile and puts blocksamples to queue.
@@ -257,9 +232,7 @@ class App:
             assert _block_hash, f"Found event that has no hash {event}!"
 
             if not _block_hash in self.recorded_events:
-                LOG.debug(
-                    f"New hash {event.block_hash_short}"
-                )
+                logger.debug("New hash %s", event.block_hash_short)
                 # A new hash is seen, make a new list to store its events in
                 self.recorded_events[_block_hash] = list()
             self.recorded_events[_block_hash].append(event)
@@ -281,10 +254,46 @@ class App:
                 # Delete events for hash from recorded_events
                 if removed_hash in self.recorded_events:
                     del self.recorded_events[removed_hash]
-                    LOG.debug(f"Removed {removed_hash} from published_hashes")
+                    logger.debug("Removed %s from published_hashes", removed_hash)
                 else:
-                    LOG.warning(f"Hash not found in recorded_events for deletion '{removed_hash}'")
-            LOG.debug(f"Recorded blocks {len(self.recorded_events.keys())} - Published blocks {len(self.published_hashes)}")
+                    logger.warning("Hash not found in recorded_events for deletion %s", removed_hash)
+            logger.debug("Recorded blocks %s - Published blocks %s", len(self.recorded_events.keys()), len(self.published_hashes))
+
+    def logevents_systemd(self):
+        """Generator that produces LogEvent Instances by reading the journald
+        """
+        jr = journal.Reader()
+        _service_unit = self.app_config.node_service_unit
+        jr.add_match(_SYSTEMD_UNIT=_service_unit)
+        logger.debug("Listeing to service unit: %s", _service_unit)
+        jr.log_level(journal.LOG_DEBUG)
+        jr.seek_realtime(datetime.now())
+        while True:
+            event = jr.wait()
+            if event == journal.APPEND:
+                for entry in jr:
+                    message = entry["MESSAGE"]
+                    event = LogEvent.from_logline(message, masked_addresses=self.app_config.masked_addresses)
+                    if not event: # JSON Error decoding that line
+                        continue
+                    logger.debug(event)
+
+                    # Filter out events that are too far from the past
+                    bad_before = int(datetime.now().timestamp()) - int(
+                        timedelta(seconds=MAX_EVENT_AGE).total_seconds()
+                    )
+                    if int(event.at.timestamp()) < bad_before:
+                        continue
+
+                    # Only yield event of a specific kind
+                    if event.kind in (
+                        LogEventKind.TRACE_DOWNLOADED_HEADER,
+                        LogEventKind.SEND_FETCH_REQUEST,
+                        LogEventKind.COMPLETED_BLOCK_FETCH,
+                        LogEventKind.ADDED_TO_CURRENT_CHAIN,
+                        LogEventKind.SWITCHED_TO_A_FORK
+                    ):
+                        yield event
 
     def logevents(self):
         """Generator that "tails" the node log file and parses each. We are
@@ -317,23 +326,16 @@ class App:
             while True:
                 node_log_link = self.app_config.node_logfile
                 if not node_log_link.exists():
-                    LOG.warning(f"Node log file does not exist '{node_log_link}'")
+                    logger.warning("Node log file does not exist %s", node_log_link)
                     time.sleep(10)
                 try:
                     real_node_log = os.path.realpath(node_log_link, strict=True)
-                    # LOG.debug(f"Resolved {node_log_link} to {real_node_log}")
+                    # logger.debug(f"Resolved {node_log_link} to {real_node_log}")
                     return self.app_config.node_logdir.joinpath(real_node_log)
                 except OSError:
-                    LOG.warning(f"Real node log not found from link '{node_log_link}'")
+                    logger.warning("Real node log not found from link %s", node_log_link)
                     time.sleep(10)
 
-        interesting_kinds = (
-            LogEventKind.TRACE_DOWNLOADED_HEADER,
-            LogEventKind.SEND_FETCH_REQUEST,
-            LogEventKind.COMPLETED_BLOCK_FETCH,
-            LogEventKind.ADDED_TO_CURRENT_CHAIN,
-            LogEventKind.SWITCHED_TO_A_FORK
-        )
         first_loop = True
         while True:
             real_node_log = _real_node_log()
@@ -343,29 +345,33 @@ class App:
                 if first_loop == True:
                     fp.seek(0, 2)
                     first_loop = False
-                LOG.debug(f"Opened {real_node_log}")
+                logger.debug("Opened %s", real_node_log)
                 while same_file:
                     new_line = fp.readline()
                     if not new_line:
                         # if no new_line is returned check if the symlink changed
                         if real_node_log.name != _real_node_log().name:
-                            LOG.debug( f"Symlink changed" )
+                            logger.debug("Symlink changed" )
                             same_file = False
                         time.sleep(0.1)
                         continue
+
                     # Create LogEvent from the new line provided
-                    event = LogEvent.from_logline(new_line, masked_addresses=self.app_config.masked_addresses)
-                    if not event: # JSON Error decoding that line
-                        continue
-                    LOG.debug(event)
-                    bad_before = int(datetime.now().timestamp()) - int(
-                        timedelta(seconds=self.app_config.max_event_age).total_seconds()
+                    event = LogEvent.from_logline(
+                        new_line,
+                        masked_addresses=self.app_config.masked_addresses
                     )
-                    # Too old event
-                    if int(event.at.timestamp()) < bad_before:
-                        continue
-                    # Uninteresting event
-                    if not event.kind in interesting_kinds:
-                        continue
-                    # Nice event, yield it
-                    yield (event)
+                    if event:
+                        yield event
+                else:
+                    # Currently opened logfile has change try to read all of the
+                    # rest in one go!
+                    logger.debug("Reading the rest of it ... !!! ")
+                    for line in fp.readlines():
+
+                        event = LogEvent.from_logline(
+                            line,
+                            masked_addresses=self.app_config.masked_addresses
+                        )
+                        if event:
+                            yield event

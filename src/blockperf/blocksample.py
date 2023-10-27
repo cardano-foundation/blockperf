@@ -5,12 +5,11 @@ from typing import Union
 from datetime import datetime, timezone, timedelta
 import logging
 
-from blockperf import logger_name
 from blockperf import __version__ as blockperf_version
 from blockperf.config import AppConfig
-from blockperf.logevent import LogEventKind, LogEvent
+from blockperf.nodelogs import LogEventKind, LogEvent
 # logging.basicConfig(level=logging.DEBUG, format="(%(threadName)-9s) %(message)s")
-LOG = logging.getLogger(logger_name)
+logger = logging.getLogger(__name__)
 
 
 # Unixtimestamps of the starttimes of different networks. Needed to determine
@@ -23,7 +22,9 @@ network_starttime = {
 
 
 class BlockSample:
-    """BlockSample represents all trace events for any given block hash.
+    """BlockSample represents the data fetched from the logs for a given block.
+    It is
+      trace events for any given block hash.
     It provides a unified interface to think about what happend with a
     specific block. When was its header first announced, when did it first
     completed downloading etc.
@@ -76,7 +77,7 @@ class BlockSample:
             if event.kind == LogEventKind.TRACE_DOWNLOADED_HEADER:
                 return event
         # If there is no TRACE_DOWNLOADED_HEADER, we cant even figure out block_num or block_hash (currently)
-        LOG.warning(f"No first {LogEventKind.TRACE_DOWNLOADED_HEADER}")
+        logger.warning("No first %s", LogEventKind.TRACE_DOWNLOADED_HEADER)
         return None
 
     @property
@@ -85,7 +86,10 @@ class BlockSample:
         for event in self.trace_events:
             if event.kind == LogEventKind.COMPLETED_BLOCK_FETCH:
                 return event
-        LOG.warning(f"No first {LogEventKind.COMPLETED_BLOCK_FETCH}; BlockNo: {self.block_num} Hash: {self.block_hash}")
+        logger.warning(
+            "No first %s; BlockNo: %s Hash: %s",
+            LogEventKind.COMPLETED_BLOCK_FETCH, self.block_num, self.block_hash
+        )
         return None
 
     @property
@@ -101,7 +105,9 @@ class BlockSample:
                 and event.remote_port == fcb.remote_port
             ):
                 return event
-        LOG.error(f"No {LogEventKind.SEND_FETCH_REQUEST} found for {fcb}")
+        logger.error(
+            "No %s found for %s",
+            LogEventKind.SEND_FETCH_REQUEST, fcb)
         return None
 
     @property
@@ -219,7 +225,7 @@ class BlockSample:
                 LogEventKind.SWITCHED_TO_A_FORK,
             ):
                 return event
-        LOG.error(f"{self.block_hash_short} has not been adopted!")
+        logger.error("%s has not been adopted!", self.block_hash_short)
         return None
 
     @property

@@ -50,8 +50,9 @@ classifiers = [  # Optional
 dependencies = [ # Optional
   "click",
   "paho-mqtt==1.6.1",
-  "psutil"
-  # "cryptography"
+  "psutil==5.9.6",
+  "systemd-python==v235",
+  "pyaml==23.9.7"
 ]
 
 [project.optional-dependencies] # Optional

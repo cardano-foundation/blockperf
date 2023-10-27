@@ -1,5 +1,5 @@
-from blockperf.logevent import LogEventKind
-from blockperf.logevent import LogEvent
+from blockperf.logger import LogEventKind
+from blockperf.logger import LogEvent
 
 
 loglines = """

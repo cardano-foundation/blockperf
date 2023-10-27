@@ -1,3 +1,6 @@
+"""
+"""
+
 import json
 import sys
 from enum import Enum
@@ -5,12 +8,11 @@ from typing import Union
 from datetime import datetime, timezone, timedelta
 import logging
 
-from blockperf import logger_name
 from blockperf import __version__ as blockperf_version
-from blockperf.config import AppConfig
+from blockperf.config import AppConfig, MAX_EVENT_AGE
 
 # logging.basicConfig(level=logging.DEBUG, format="(%(threadName)-9s) %(message)s")
-LOG = logging.getLogger(logger_name)
+logger = logging.getLogger(__name__)
 
 
 class LogEventKind(Enum):
@@ -125,7 +127,7 @@ class LogEvent:
         )
         self.data = event_data.get("data", {})
         if not self.data:
-            LOG.error(f"{self} has not data")
+            logger.error("%s has not data", self)
         self.env = event_data.get("env", "")
         # ns seems to always be a single entry list ...
         self.ns = event_data.get("ns", [""])[0]
@@ -147,16 +149,45 @@ class LogEvent:
 
     @classmethod
     def from_logline(cls, logline: str, masked_addresses: list = []):
-        """Takes a single line from the logs and creates a"""
+        """Takes a single line from the logs and creates a LogEvent.
+        But will return None if the event is
+            * could not be turned into json
+            * is too old
+            * Is not of one of the specific kinds
+        """
+        # Most stupid (simple) way to remove ip addresss given
+        for addr in masked_addresses:
+            logline = logline.replace(addr, "x.x.x.x")
+
+        _event: Union[LogEvent, None] = None
+        # Try to turn it into json
         try:
-            # Most stupid (simple) way to remove ip addresss given
-            for addr in masked_addresses:
-                logline = logline.replace(addr, "x.x.x.x")
-            _json_data = json.loads(logline)
-            return cls(_json_data)
-        except json.decoder.JSONDecodeError as e:
-            LOG.error(f"Invalid JSON {logline} ")
+            json_data = json.loads(logline)
+            _event = cls(json_data)
+        except json.decoder.JSONDecodeError:
+            logger.error("Invalid JSON %s", logline)
             return None
+        logger.debug(_event)
+
+        # Is this event not too old already?
+        bad_before = int(datetime.now().timestamp()) - int(
+            timedelta(seconds=MAX_EVENT_AGE).total_seconds()
+        )
+        if int(_event.at.timestamp()) < bad_before:
+            return None
+
+        #
+        if _event.kind not in (
+            LogEventKind.TRACE_DOWNLOADED_HEADER,
+            LogEventKind.SEND_FETCH_REQUEST,
+            LogEventKind.COMPLETED_BLOCK_FETCH,
+            LogEventKind.ADDED_TO_CURRENT_CHAIN,
+            LogEventKind.SWITCHED_TO_A_FORK
+        ):
+            return None
+
+        # Looks good, return that event!
+        return _event
 
     @property
     def block_hash(self) -> str:
@@ -201,50 +232,54 @@ class LogEvent:
     def delay(self) -> float:
         _delay = self.data.get("delay", 0.0)
         if not _delay:
-            LOG.warning(f"{self} has no delay {self.data}")
+            logger.warning("%s has no delay %s", self, self.data)
         return _delay
 
     @property
     def size(self) -> int:
         _size = self.data.get("size", 0)
         if not _size:
-            LOG.warning(f"{self} has no size {self.data}")
+            logger.warning("%s has no size %s", self, self.data)
         return _size
 
     @property
     def local_addr(self) -> str:
-        _local_addr = self.data.get("peer", {}).get("local", {}).get("addr", "")
+        _local_addr = self.data.get("peer", {}).get(
+            "local", {}).get("addr", "")
         if not _local_addr:
-            LOG.warning(f"{self} has no local_addr {self.data}")
+            logger.warning("%s has no local_addr %s", self, self.data)
         return _local_addr
 
     @property
     def local_port(self) -> str:
-        _local_port = self.data.get("peer", {}).get("local", {}).get("port", "")
+        _local_port = self.data.get("peer", {}).get(
+            "local", {}).get("port", "")
         if not _local_port:
-            LOG.warning(f"{self} has no local_port {self.data}")
+            logger.warning("%s has no local_port %s", self, self.data)
         return _local_port
 
     @property
     def remote_addr(self) -> str:
-        _remote_addr = self.data.get("peer", {}).get("remote", {}).get("addr", "")
+        _remote_addr = self.data.get("peer", {}).get(
+            "remote", {}).get("addr", "")
 
         if not _remote_addr:
-            LOG.warning(f"{self} has no remote_addr {self.data}")
+            logger.warning("%s has no remote_addr %s", self, self.data)
         return _remote_addr
 
     @property
     def remote_port(self) -> str:
-        _remote_port = self.data.get("peer", {}).get("remote", {}).get("port", "")
+        _remote_port = self.data.get("peer", {}).get(
+            "remote", {}).get("port", "")
         if not _remote_port:
-            LOG.warning(f"{self} has no remote_port {self.data}")
+            logger.warning("%s has no remote_port %s", self, self.data)
         return _remote_port
 
     @property
     def slot_num(self) -> int:
         _slot_num = self.data.get("slot", 0)
         if not _slot_num:
-            LOG.warning(f"{self} has no slot_num {_slot_num} {self.data}")
+            logger.warning("%s has no slot_num %s", self, _slot_num)
         return _slot_num
 
     @property
@@ -266,21 +301,28 @@ class LogEvent:
     def deltaq_g(self) -> float:
         _deltaq_g = self.data.get("deltaq", {}).get("G", 0.0)
         if not _deltaq_g:
-            LOG.warning(f"{self} has no deltaq_g {self.data}")
+            logger.warning("%s has no deltaq_g %s", self, self.data)
         return float(_deltaq_g)
 
     @property
     def chain_length_delta(self) -> int:
         _chain_length_delta = self.data.get("chainLengthDelta", 0)
         if not _chain_length_delta:
-            LOG.warning(f"{self} has no chain_length_delta {self.data}")
+            logger.warning("%s has no chain_length_delta %s", self, self.data)
         return _chain_length_delta
 
     @property
     def newtip(self) -> str:
         _newtip = self.data.get("newtip", "")
         if not _newtip:
-            LOG.warning(f"{self} has no newtip {self.data}")
+            logger.warning("%s has no newtip %s", self, self.data)
         else:
             _newtip = _newtip.split("@")[0]
         return _newtip
+
+
+class LogEventGenerator():
+
+    @classmethod
+    def generate(cls, ):
+        pass
