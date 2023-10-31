@@ -15,7 +15,6 @@ except ImportError:
 from blockperf.config import BROKER_URL, BROKER_PORT, BROKER_KEEPALIVE
 
 logger = logging.getLogger(__name__)
-logger.debug("Mqtt Module ")
 
 
 class MQTTClient(mqtt.Client):
@@ -23,33 +22,24 @@ class MQTTClient(mqtt.Client):
     """
 
     def __init__(self, ) -> None:
-        print("Creating MQTT Client")
         super().__init__(protocol=mqtt.MQTTv5)
-        self.broker_url = ""
-        self.broker_port = ""
 
     def run(self):
-        print("Run MQTT Client")
+        logger.debug("Connecting to %s:%s", BROKER_URL, BROKER_PORT)
         self.connect(host=BROKER_URL, port=BROKER_PORT,
                      keepalive=BROKER_KEEPALIVE)
-        # self.subscribe("$SYS/#", 0)
-
-        rc = 0
-        while rc == 0:
-            print("Mqtt Loop")
-            rc = self.loop_start()
-        return rc
+        self.loop_start()
 
     def on_connect(self, client, userdata, flags, reasonCode, properties):
         logger.debug("Connected: %s ", str(reasonCode))
 
     def on_connect_fail(self, client, obj):
-        logger.debug("Connection Failed")
+        logger.warning("Connection Failed")
 
     def on_disconnect(self, client, userdata, reasonCode) -> None:
         """Called when disconnected from broker
         See paho.mqtt.client.py on_disconnect()"""
-        logger.debug("Connection disconnected %s", reasonCode)
+        logger.warning("Connection disconnected %s", reasonCode)
 
     def on_publish(self, client, userdata, mid) -> None:
         """Called when a message is actually received by the broker.

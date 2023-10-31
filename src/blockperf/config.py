@@ -21,6 +21,18 @@ BROKER_PORT = 8883
 BROKER_KEEPALIVE = 180
 ROOTDIR = Path(__file__).parent
 
+MASKED_ADDRESSES = []
+if _masked_addresses := os.getenv("BLOCKPERF_MASKED_ADDRESSES", None):
+    _validated_addresses = list()
+    # String split and return list
+    for addr in _masked_addresses.split(","):
+        try:
+            ipaddress.ip_address(addr)
+            _validated_addresses.append(addr)
+        except ValueError:
+            raise ConfigError(f"Given address {addr} is not a valid ip address")
+    MASKED_ADDRESSES = _masked_addresses
+
 class AppConfig:
     config_parser: ConfigParser
 
@@ -185,28 +197,6 @@ class AppConfig:
     def topic(self) -> str:
         """"""
         return f"cf/blockperf/{self.topic_version}/{self.network_magic}/{self.name}/{self.relay_public_ip}"
-
-    @property
-    def masked_addresses(self) -> list:
-        masked_addresses = os.getenv(
-            "BLOCKPERF_MASKED_ADDRESSES",
-            self.config_parser.get(
-                "DEFAULT",
-                "masked_addresses",
-                fallback=None,
-            )
-        )
-        if masked_addresses:
-            _validated_addresses = list()
-            # String split and return list
-            for addr in masked_addresses.split(","):
-                try:
-                    ipaddress.ip_address(addr)
-                    _validated_addresses.append(addr)
-                except ValueError:
-                    raise ConfigError(f"Given address {addr} is not a valid ip address")
-            return _validated_addresses
-        return list()
 
     @property
     def node_service_unit(self) -> str:

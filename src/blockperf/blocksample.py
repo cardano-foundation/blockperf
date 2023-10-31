@@ -70,6 +70,19 @@ class BlockSample:
         events.sort(key=lambda x: x.at)
         self.trace_events = events
 
+    def is_complete(self) -> bool:
+        """
+        """
+        if not self.first_trace_header:
+            return False
+        if not self.first_completed_block:
+            return False
+        if not self.fetch_request_completed_block:
+            return False
+        if not self.block_adopt:
+            return False
+        return True
+
     @property
     def first_trace_header(self) -> Union[LogEvent, None]:
         """Returnms first TRACE_DOWNLOADED_HEADER received"""
