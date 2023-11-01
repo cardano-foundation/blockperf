@@ -26,8 +26,47 @@ def already_running() -> bool:
     return False
 
 
-def setup_logger():
-    logger_config = yaml.safe_load(ROOTDIR.joinpath("logger.yaml").read_text())
+def setup_logger(debug: bool):
+    level = "DEBUG" if debug else "INFO"
+    logger_config = {
+        "version": 1,
+        "disable_existing_loggers": False,
+        "formatters": {
+            "simple": {
+                "format": "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+            },
+            "extra": {
+                "format": "%(asctime)-16s %(name)-8s %(filename)-12s %(lineno)-6s %(funcName)-30s %(levelname)-8s %(message)s",
+                "datefmt": "%m-%d %H:%M:%S"
+            }
+        },
+        "handlers": {
+            "console": {
+                "class": "logging.StreamHandler",
+                "level": level,
+                "formatter": "simple",
+                "stream": "ext://sys.stdout",
+            },
+            # "logfile": {
+            #    "class": "logging.handlers.RotatingFileHandler",
+            #    "level": "DEBUG",
+            #    "filename": "blockperf.log",
+            #    "formatter": "extra",
+            #    "mode": "a",
+            #    "maxBytes": 1000000,
+            #    "backupCount": 2,
+            # }
+        },
+        "loggers": {
+            "blockperf": {
+                "handlers": []
+            }
+        },
+        "root": {
+            "level": level,
+            "handlers": ["console"]
+        }
+    }
     dictConfig(logger_config)
 
 
@@ -50,10 +89,10 @@ def main():
     is_flag=True,
     help="Enables debug mode (print even more than verbose)",
 )
-def cmd_run(config_file_path=None, verbose=False, debug=False):
+def cmd_run(config_file_path=None, debug=False):
     # configure_logging(debug)
     logger.info(os.getcwd())
-    setup_logger()
+    setup_logger(debug)
 
     if already_running():
         click.echo(f"Is blockperf already running?")
