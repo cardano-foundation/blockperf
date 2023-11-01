@@ -60,7 +60,7 @@ def setup_logger(debug: bool):
         "loggers": {
             "blockperf": {
                 "level": "DEBUG",
-                "handlers": ["logfile"]
+                "handlers": []
             }
         },
         "root": {
@@ -86,7 +86,6 @@ def main():
     and sends it to an aggregation services for further analysis.
     """
     args = setup_argparse()
-    print(f"args.debug {args.debug}")
     setup_logger(args.debug)
 
     if args.command == "run":
@@ -96,7 +95,7 @@ def main():
 
 
 def cmd_run(config_file_path=None):
-    # configure_logging(debug)
+
     logger.info(os.getcwd())
 
     if already_running():
