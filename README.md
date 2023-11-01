@@ -86,8 +86,10 @@ file for that or provide the values via environment variables.
 
 ```bash
 # The following are all required to operate
-# Point to your local cardano-node config
+# Your local cardano-node config
 BLOCKPERF_NODE_CONFIG="/opt/cardano/cnode/files/config.json"
+# The logfile the cardano-node is writing to, Usualy the symlink node.json
+BLOCKPERF_NODE_LOGFILE="/opt/cardano/cnode/logs/node.json"
 # The ip address your relay is reachable at
 BLOCKPERF_RELAY_PUBLIC_IP="x.x.x.x"
 # your client identifier, will be given to you with the certificates
