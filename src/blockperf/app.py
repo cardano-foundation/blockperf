@@ -275,6 +275,8 @@ class App:
         """Return the path to the actual logfile that node.log points to"""
         while True:
             node_log_link = self.app_config.node_logfile
+            # At this point there must not be an empty logfile
+            assert node_log_link, "Node logfile not found"
             if not node_log_link.exists():
                 logger.warning(
                     "Node log file does not exist %s", node_log_link)
@@ -282,7 +284,9 @@ class App:
             try:
                 real_node_log = os.path.realpath(
                     node_log_link, strict=True)
-                return self.app_config.node_logdir.joinpath(real_node_log)
+                node_logdir = self.app_config.node_logdir
+                assert node_logdir, "Node logdir not found"
+                return node_logdir.joinpath(real_node_log)
             except OSError:
                 logger.warning(
                     "Real node log not found from link %s", node_log_link)

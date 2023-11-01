@@ -25,9 +25,9 @@ BROKER_PORT = 8883
 BROKER_KEEPALIVE = 180
 ROOTDIR = Path(__file__).parent
 
-MASKED_ADDRESSES = []
-if _masked_addresses := os.getenv("BLOCKPERF_MASKED_ADDRESSES", None):
-    _validated_addresses = list()
+MASKED_ADDRESSES: list = []
+if _masked_addresses := os.getenv("BLOCKPERF_MASKED_ADDRESSES", ""):
+    _validated_addresses = []
     # String split and return list
     for addr in _masked_addresses.split(","):
         try:
@@ -36,7 +36,7 @@ if _masked_addresses := os.getenv("BLOCKPERF_MASKED_ADDRESSES", None):
         except ValueError as exc:
             raise ConfigError(
                 f"Given address {addr} is not a valid ip address") from exc
-    MASKED_ADDRESSES = _masked_addresses
+    MASKED_ADDRESSES = _validated_addresses
 
 
 class AppConfig:
