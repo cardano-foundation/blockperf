@@ -10,19 +10,9 @@ from pathlib import Path
 from datetime import datetime, timedelta
 from timeit import default_timer as timer
 
-
-try:
-    import paho.mqtt.client as mqtt
-    from paho.mqtt.properties import Properties
-    from paho.mqtt.packettypes import PacketTypes
-except ImportError:
-    sys.exit(
-        "This script needs paho-mqtt package.\n"
-        "https://pypi.org/project/paho-mqtt/\n\n"
-    )
-
 from blockperf import __version__ as blockperf_version
-from blockperf.config import AppConfig, MAX_EVENT_AGE, MQTT_PUBLISH_TIMEOUT
+from blockperf.config import AppConfig
+
 from blockperf.blocksample import BlockSample
 from blockperf.nodelogs import LogEventKind, LogEvent
 from blockperf.mqtt import MQTTClient
@@ -43,13 +33,14 @@ class App:
     def __init__(self, config: AppConfig) -> None:
         self.q = queue.Queue(maxsize=20)
         self.app_config = config
-        self.mqtt_client = MQTTClient()
-        self.mqtt_client.tls_set(
-            ca_certs=self.app_config.amazon_ca,
-            certfile=self.app_config.client_cert,
-            keyfile=self.app_config.client_key,
+        self.mqtt_client = MQTTClient(
+            ca_certfile=self.app_config.amazon_ca,
+            client_certfile=self.app_config.client_cert,
+            client_keyfile=self.app_config.client_key,
+            host=self.app_config.broker_host,
+            port=self.app_config.broker_port,
+            keepalive=self.app_config.broker_keepalive
         )
-        self.mqtt_client.run()
 
     def run(self):
         """Run the App by creating the two threads and starting them."""
@@ -134,17 +125,7 @@ class App:
                     "Exception in blocksample_consumer; Restarting Loop", exc_info=True)
 
     def _blocksample_consumer(self):
-        """
-        Consumer thread that listens to the queue and published each sample the the consumer puts into it.
-        """
-        # self.mqtt_client
-        # broker_url, broker_port = (
-        #    self.app_config.mqtt_broker_url,
-        #    self.app_config.mqtt_broker_port,
-        # )
-        # logger.debug(f"Connecting to {broker_url}:{broker_port}")
-        # self.mqtt_client.connect(broker_url, broker_port)
-        # self.mqtt_client.loop_start()  # Starts thread for pahomqtt to process messages
+        """Consumer thread publishes each sample the consumer puts into the queue"""
 
         # Sometimes the connect took a moment to settle. To not have
         # the consumer accept messages (and not be able to publish)
@@ -162,23 +143,10 @@ class App:
             payload = self.mqtt_payload_from(blocksample)
             logger.debug(json.dumps(payload, indent=4,
                          sort_keys=True, ensure_ascii=False))
-            start_publish = timer()
 
-            publish_properties = Properties(PacketTypes.PUBLISH)
-            publish_properties.MessageExpiryInterval = 3600
-
-            message_info = self.mqtt_client.publish(
-                topic=f"{self.app_config.topic}/{blocksample.block_hash}",
-                payload=json.dumps(payload, default=str),
-                properties=publish_properties
-            )
-            # blocks until timeout is reached
-            message_info.wait_for_publish(MQTT_PUBLISH_TIMEOUT)
-            end_publish = timer()
-            publish_time = end_publish - start_publish
-            self.last_slot_time = blocksample.slot_time
-            if publish_time > float(MQTT_PUBLISH_TIMEOUT):
-                logger.error("Publish timeout reached")
+            # new
+            topic = f"{self.app_config.topic}/{blocksample.block_hash}"
+            self.mqtt_client.publish(topic, payload)
 
     def blocksample_producer(self):
         while True:
