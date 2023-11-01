@@ -174,6 +174,16 @@ class AppConfig:
         return client_key
 
     @property
+    def amazon_ca(self) -> str:
+        amazon_ca = os.getenv(
+            "BLOCKPERF_AMAZON_CA",
+            self.config_parser.get("DEFAULT", "amazon_ca", fallback=None),
+        )
+        if not amazon_ca:
+            raise ConfigError("No amazon_ca set")
+        return amazon_ca
+
+    @property
     def name(self) -> str:
         name = os.getenv(
             "BLOCKPERF_NAME",

@@ -45,7 +45,7 @@ class App:
         self.app_config = config
         self.mqtt_client = MQTTClient()
         self.mqtt_client.tls_set(
-            # ca_certs="/tmp/AmazonRootCA1.pem",
+            ca_certs=self.app_config.amazon_ca,
             certfile=self.app_config.client_cert,
             keyfile=self.app_config.client_key,
         )

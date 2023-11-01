@@ -92,12 +92,13 @@ BLOCKPERF_NODE_CONFIG="/opt/cardano/cnode/files/config.json"
 BLOCKPERF_RELAY_PUBLIC_IP="x.x.x.x"
 # your client identifier, will be given to you with the certificates
 BLOCKPERF_NAME="XX"
-# path to your client certificate
+# path to your client certificate file
 BLOCKPERF_CLIENT_CERT="XXX"
-# path to your client key
+# path to your client key file
 BLOCKPERF_CLIENT_KEY="XXX"
-# path of the topic you will publish to. Leave this as "blockperf" for now
-BLOCKPERF_TOPIC_BASE="blockperf"
+# path to amazons ca file in pem format, find it here: https://www.amazontrust.com/repository/
+# https://www.amazontrust.com/repository/AmazonRootCA1.pem
+BLOCKPERF_AMAZON_CA="XXX"
 
 # The following may be set but are not required, defaults are shown in examples
 # port your relay listens on
