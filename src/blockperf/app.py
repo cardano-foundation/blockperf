@@ -31,8 +31,21 @@ class App:
     published_hashes = collections.deque()
 
     def __init__(self, config: AppConfig) -> None:
-        self.q = queue.Queue(maxsize=20)
+        self.q = queue.Queue(maxsize=50)
         self.app_config = config
+
+    def run(self):
+        """Run the App by creating the two threads and starting them."""
+        msg = (
+            f"\n----------------------------------------------------\n"
+            f"Node config:   {self.app_config.node_config_file}\n"
+            f"Node logfile:  {self.app_config.node_logfile}\n"
+            f"Client Name:   {self.app_config.name}\n"
+            f"Networkmagic:  {self.app_config.network_magic}\n"
+            # f"..... {blocksample.block_delay} sec\n\n"
+            f"----------------------------------------------------\n\n"
+        )
+        sys.stdout.write(msg)
         self.mqtt_client = MQTTClient(
             ca_certfile=self.app_config.amazon_ca,
             client_certfile=self.app_config.client_cert,
@@ -42,8 +55,6 @@ class App:
             keepalive=self.app_config.broker_keepalive
         )
 
-    def run(self):
-        """Run the App by creating the two threads and starting them."""
         producer_thread = threading.Thread(
             target=self.blocksample_producer, args=(), daemon=True)
         producer_thread.start()

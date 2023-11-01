@@ -27,6 +27,7 @@ def already_running() -> bool:
 
 
 def setup_logger(debug: bool):
+    """Configures logging"""
     level = "DEBUG" if debug else "INFO"
     logger_config = {
         "version": 1,
@@ -72,12 +73,23 @@ def setup_logger(debug: bool):
 
 
 def setup_argparse():
+    """Configures argparse"""
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "command", help="Command to run blockperf with", choices=["run"]
     )
-    parser.add_argument("--debug")
+    parser.add_argument(
+        "--debug", help="Write more debug output", action="store_true")
     return parser.parse_args()
+
+
+def cmd_run(config_file_path=None):
+    """Command run"""
+    if already_running():
+        sys.exit("Blockperf is already running ... ")
+    app_config = AppConfig(config_file_path)
+    app = App(app_config)
+    app.run()
 
 
 def main():
@@ -92,19 +104,6 @@ def main():
         cmd_run()
     else:
         sys.exit(f"I dont know what {args.command} means")
-
-
-def cmd_run(config_file_path=None):
-
-    logger.info(os.getcwd())
-
-    if already_running():
-        sys.exit("Blockperf is already running ... ")
-
-    app_config = AppConfig(config_file_path)
-    app_config.check_blockperf_config()
-    app = App(app_config)
-    app.run()
 
 
 if __name__ == "__main__":

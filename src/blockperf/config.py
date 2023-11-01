@@ -2,13 +2,16 @@
 App Configuration is done either via Environment variables or the stdlib
 configparser module.
 """
-import sys
 import ipaddress
 import json
 import os
+import sys
+import logging
 from configparser import ConfigParser
 from pathlib import Path
 from typing import Union
+
+logger = logging.getLogger(__name__)
 
 
 class ConfigError(Exception):
@@ -17,11 +20,10 @@ class ConfigError(Exception):
 
 # Maximum age of logfile event in seconds, events older then this are discarded
 MAX_EVENT_AGE = 600
-BROKER_URL = "a12j2zhynbsgdv-ats.iot.eu-central-1.amazonaws.com"
+BROKER_HOST = "a12j2zhynbsgdv-ats.iot.eu-central-1.amazonaws.com"
 BROKER_PORT = 8883
 BROKER_KEEPALIVE = 180
 ROOTDIR = Path(__file__).parent
-MQTT_PUBLISH_TIMEOUT = 30  # seconds to wait for mqtt publish to finish
 
 MASKED_ADDRESSES = []
 if _masked_addresses := os.getenv("BLOCKPERF_MASKED_ADDRESSES", None):
@@ -38,25 +40,61 @@ if _masked_addresses := os.getenv("BLOCKPERF_MASKED_ADDRESSES", None):
 
 
 class AppConfig:
+    """App Configuration class provides a common interface to access all kinds
+    of configuration values.
+    """
     config_parser: ConfigParser
 
-    def __init__(self, config_file: Union[Path, None], verbose=False):
+    def __init__(self, config_file: Union[Path, None] = None, verbose=False):
         self.config_parser = ConfigParser()
         if config_file:
             self.config_parser.read(config_file)
         self.verbose = verbose
+        self.check_blockperf_config()
 
     def check_blockperf_config(self):
         """Try to check whether or not everything that is fundamentally needed
             is actually configured, by asking for its value and triggering
             the implemented failer if not found.
         """
-        self.node_config_file
-        self.node_logdir
-        self.name
-        self.relay_public_ip
-        self.client_cert
-        self.client_key
+        if not self.node_config_file or not self.node_config_file.exists():
+            logger.error("Node config '%s' config does not exist",
+                         self.node_config_file)
+            sys.exit()
+
+        if not self.node_logfile or not self.node_logfile.exists():
+            logger.error("Node logfile '%s' does not exist", self.node_logfile)
+            sys.exit()
+
+        # logdir is taken from the .parent of node_logfile
+        if not self.node_logdir or not self.node_logdir.exists():
+            logger.error("Node logdir '%s' does not exist",
+                         self.node_logdir)
+            sys.exit()
+
+        if not self.name:
+            logger.error("NAME is not set")
+            sys.exit()
+
+        if not self.relay_public_ip:
+            logger.error("RELAY_PUBLIC_IP is not set")
+            sys.exit()
+
+        if not Path(self.client_cert).exists():
+            logger.error("Client cert '%s' does not exist", self.client_cert)
+            sys.exit()
+
+        if not Path(self.client_key).exists():
+            logger.error("Client key '%s' does not exist", self.client_key)
+            sys.exit()
+
+        if not Path(self.amazon_ca).exists():
+            logger.error("Amazon CA '%s' does not exist", self.amazon_ca)
+            sys.exit()
+
+        if self.active_slot_coef <= 0.0:
+            logger.error("Could not retrieve active_slot_coef")
+            sys.exit()
 
         # Check for needed config values
         assert self.node_config.get(
@@ -66,6 +104,18 @@ class AppConfig:
         # What are the other possible values? This should allow everything that is above Normal
         assert self.node_config.get(
             "TracingVerbosity", "") == "NormalVerbosity", "TracingVerbosity not enabled"
+
+    @property
+    def broker_host(self) -> str:
+        return BROKER_HOST
+
+    @property
+    def broker_port(self) -> int:
+        return BROKER_PORT
+
+    @property
+    def broker_keepalive(self) -> int:
+        return BROKER_KEEPALIVE
 
     @property
     def node_config_file(self) -> Path:
@@ -90,23 +140,26 @@ class AppConfig:
         return self.node_config_file.parent
 
     @property
-    def node_logdir(self) -> Path:
+    def node_logdir(self) -> Union[Path, None]:
+        if not self.node_logfile:
+            return None
         return self.node_logfile.parent
 
     @property
-    def node_logfile(self) -> Path:
-        """Node logfile from env variable or read out of the config"""
-        node_logfile = os.getenv("BLOCKPERF_NODE_LOGFILE")
-        if node_logfile:
-            node_logfile = Path(node_logfile)
-        else:
-            for ss in self.node_config.get("setupScribes", []):
-                if ss.get("scFormat") == "ScJson" and ss.get("scKind") == "FileSK":
-                    node_logfile = Path(ss.get("scName"))
-                    break
+    def node_logfile(self) -> Union[Path, None]:
+        """Node logfile from env variable or read
+        Idealy this would look into the config to determine the logfile from there
+
+        e.g.:
+        for ss in self.node_config.get("setupScribes", []):
+           if ss.get("scFormat") == "ScJson" and ss.get("scKind") == "FileSK":
+               node_logfile = Path(ss.get("scName"))
+               break
+        """
+        node_logfile = os.getenv("BLOCKPERF_NODE_LOGFILE", None)
         if not node_logfile:
-            raise ConfigError(f"Logfile not given")
-        return node_logfile
+            return None
+        return Path(node_logfile)
 
     @property
     def _shelley_genesis_file(self) -> Path:
@@ -125,10 +178,7 @@ class AppConfig:
     @property
     def active_slot_coef(self) -> float:
         active_slot_coef = self._shelley_genesis_data.get(
-            "activeSlotsCoeff", None)
-        if not active_slot_coef:
-            raise ConfigError(
-                "Error retrieving activeSlotsCoef from shelley-genesis")
+            "activeSlotsCoeff", 0.0)
         return float(active_slot_coef)
 
     @property
@@ -136,10 +186,8 @@ class AppConfig:
         relay_public_ip = os.getenv(
             "BLOCKPERF_RELAY_PUBLIC_IP",
             self.config_parser.get(
-                "DEFAULT", "relay_public_ip", fallback=None),
+                "DEFAULT", "relay_public_ip", fallback=""),
         )
-        if not relay_public_ip:
-            raise ConfigError("'relay_public_ip' not set!")
         return relay_public_ip
 
     @property
@@ -157,40 +205,32 @@ class AppConfig:
     def client_cert(self) -> str:
         client_cert = os.getenv(
             "BLOCKPERF_CLIENT_CERT",
-            self.config_parser.get("DEFAULT", "client_cert", fallback=None),
+            self.config_parser.get("DEFAULT", "client_cert", fallback=""),
         )
-        if not client_cert:
-            raise ConfigError("No client_cert set")
         return client_cert
 
     @property
     def client_key(self) -> str:
         client_key = os.getenv(
             "BLOCKPERF_CLIENT_KEY",
-            self.config_parser.get("DEFAULT", "client_key", fallback=None),
+            self.config_parser.get("DEFAULT", "client_key", fallback=""),
         )
-        if not client_key:
-            raise ConfigError("No client_key set")
         return client_key
 
     @property
     def amazon_ca(self) -> str:
         amazon_ca = os.getenv(
             "BLOCKPERF_AMAZON_CA",
-            self.config_parser.get("DEFAULT", "amazon_ca", fallback=None),
+            self.config_parser.get("DEFAULT", "amazon_ca", fallback=""),
         )
-        if not amazon_ca:
-            raise ConfigError("No amazon_ca set")
         return amazon_ca
 
     @property
     def name(self) -> str:
         name = os.getenv(
             "BLOCKPERF_NAME",
-            self.config_parser.get("DEFAULT", "name", fallback=None),
+            self.config_parser.get("DEFAULT", "name", fallback=""),
         )
-        if not name:
-            raise ConfigError("No name set")
         return name
 
     @property
