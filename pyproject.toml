@@ -21,7 +21,7 @@ maintainers = [
   {name = "Manuel Schmidt", email = "manuel.schmidt@cardanofoundation.org" }
 ]
 
-classifiers = [  # Optional
+classifiers = [
   # How mature is this project? Common values are
   #   3 - Alpha
   #   4 - Beta
@@ -47,11 +47,9 @@ classifiers = [  # Optional
 
 # For an analysis of this field vs pip's requirements files see:
 # https://packaging.python.org/discussions/install-requires-vs-requirements/
-dependencies = [ # Optional
-  "click",
+dependencies = [
   "paho-mqtt==1.6.1",
   "psutil==5.9.6",
-  "pyaml==23.9.7"
 ]
 
 [project.optional-dependencies] # Optional

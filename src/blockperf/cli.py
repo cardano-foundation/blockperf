@@ -1,12 +1,12 @@
+"""CLI Entrypoint for blockperf"""
 import logging
 from logging.config import dictConfig
-import json
+import argparse
+import sys
 import os
-import yaml
 from typing import Union
 from pathlib import Path
 
-import click
 import psutil
 
 from blockperf.app import App
@@ -59,7 +59,8 @@ def setup_logger(debug: bool):
         },
         "loggers": {
             "blockperf": {
-                "handlers": []
+                "level": "DEBUG",
+                "handlers": ["logfile"]
             }
         },
         "root": {
@@ -70,33 +71,36 @@ def setup_logger(debug: bool):
     dictConfig(logger_config)
 
 
-@click.group()
+def setup_argparse():
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "command", help="Command to run blockperf with", choices=["run"]
+    )
+    parser.add_argument("--debug")
+    return parser.parse_args()
+
+
 def main():
     """
     This script is based on blockperf.sh which collects data from the cardano-node
     and sends it to an aggregation services for further analysis.
     """
-    pass
+    args = setup_argparse()
+    print(f"args.debug {args.debug}")
+    setup_logger(args.debug)
+
+    if args.command == "run":
+        cmd_run()
+    else:
+        sys.exit(f"I dont know what {args.command} means")
 
 
-@click.command("run", short_help="Run blockperf")
-@click.argument(
-    "config_file_path", required=False, type=click.Path(resolve_path=True, exists=True)
-)
-@click.option(
-    "-d",
-    "--debug",
-    is_flag=True,
-    help="Enables debug mode (print even more than verbose)",
-)
-def cmd_run(config_file_path=None, debug=False):
+def cmd_run(config_file_path=None):
     # configure_logging(debug)
     logger.info(os.getcwd())
-    setup_logger(debug)
 
     if already_running():
-        click.echo(f"Is blockperf already running?")
-        raise SystemExit
+        sys.exit("Blockperf is already running ... ")
 
     app_config = AppConfig(config_file_path)
     app_config.check_blockperf_config()
@@ -104,4 +108,5 @@ def cmd_run(config_file_path=None, debug=False):
     app.run()
 
 
-main.add_command(cmd_run)
+if __name__ == "__main__":
+    main()

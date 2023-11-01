@@ -36,7 +36,7 @@ class MQTTClient(mqtt.Client):
     def on_connect_fail(self, client, obj):
         logger.warning("Connection Failed")
 
-    def on_disconnect(self, client, userdata, reasonCode) -> None:
+    def on_disconnect(self, client, userdata, reasonCode, properties) -> None:
         """Called when disconnected from broker
         See paho.mqtt.client.py on_disconnect()"""
         logger.warning("Connection disconnected %s", reasonCode)
