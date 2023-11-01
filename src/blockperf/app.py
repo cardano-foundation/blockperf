@@ -9,15 +9,7 @@ import time
 from pathlib import Path
 from datetime import datetime, timedelta
 from timeit import default_timer as timer
-from pprint import pprint
 
-try:
-    from systemd import journal
-except ImportError:
-    sys.exit(
-        "This script needs python3-systemd package.\n"
-        "https://pypi.org/project/systemd-python/\n\n"
-    )
 
 try:
     import paho.mqtt.client as mqtt
@@ -30,7 +22,7 @@ except ImportError:
     )
 
 from blockperf import __version__ as blockperf_version
-from blockperf.config import AppConfig, MAX_EVENT_AGE
+from blockperf.config import AppConfig, MAX_EVENT_AGE, MQTT_PUBLISH_TIMEOUT
 from blockperf.blocksample import BlockSample
 from blockperf.nodelogs import LogEventKind, LogEvent
 from blockperf.mqtt import MQTTClient
@@ -163,7 +155,7 @@ class App:
 
         while True:
             logger.debug(
-                f"Waiting for next item in queue, Current size: {self.q.qsize()}")
+                "Waiting for next item in queue, Current size: %s", self.q.qsize())
             blocksample = self.q.get()
             self.print_block_stats(blocksample)
 
@@ -174,21 +166,18 @@ class App:
 
             publish_properties = Properties(PacketTypes.PUBLISH)
             publish_properties.MessageExpiryInterval = 3600
+
             message_info = self.mqtt_client.publish(
                 topic=f"{self.app_config.topic}/{blocksample.block_hash}",
                 payload=json.dumps(payload, default=str),
                 properties=publish_properties
             )
             # blocks until timeout is reached
-            message_info.wait_for_publish(self.app_config.mqtt_publish_timeout)
+            message_info.wait_for_publish(MQTT_PUBLISH_TIMEOUT)
             end_publish = timer()
             publish_time = end_publish - start_publish
             self.last_slot_time = blocksample.slot_time
-            if self.app_config.verbose:
-                logger.info(
-                    f"Published {blocksample.block_hash_short} with mid='{message_info.mid}' to {self.app_config.topic} in {publish_time}"
-                )
-            if publish_time > float(self.app_config.mqtt_publish_timeout):
+            if publish_time > float(MQTT_PUBLISH_TIMEOUT):
                 logger.error("Publish timeout reached")
 
     def blocksample_producer(self):
@@ -302,42 +291,6 @@ class App:
                         "Hash not found in logevents for deletion %s", removed_hash)
             logger.info("Recorded blocks %s - Published blocks %s",
                         len(self.logevents.keys()), len(self.published_hashes))
-
-    def logevents_systemd(self):
-        """Generator that produces LogEvent Instances by reading the journald
-        """
-        jr = journal.Reader()
-        _service_unit = self.app_config.node_service_unit
-        jr.add_match(_SYSTEMD_UNIT=_service_unit)
-        logger.debug("Listeing to service unit: %s", _service_unit)
-        jr.log_level(journal.LOG_DEBUG)
-        jr.seek_realtime(datetime.now())
-        while True:
-            event = jr.wait()
-            if event == journal.APPEND:
-                for entry in jr:
-                    message = entry["MESSAGE"]
-                    event = LogEvent.from_logline(message)
-                    if not event:  # JSON Error decoding that line
-                        continue
-
-                    # Filter out events that are too far from the past
-                    bad_before = int(datetime.now().timestamp()) - int(
-                        timedelta(seconds=MAX_EVENT_AGE).total_seconds()
-                    )
-                    if int(event.at.timestamp()) < bad_before:
-                        continue
-
-                    # Only yield event of a specific kind
-                    if event.kind in (
-                        LogEventKind.TRACE_DOWNLOADED_HEADER,
-                        LogEventKind.SEND_FETCH_REQUEST,
-                        LogEventKind.COMPLETED_BLOCK_FETCH,
-                        LogEventKind.ADDED_TO_CURRENT_CHAIN,
-                        LogEventKind.SWITCHED_TO_A_FORK
-                    ):
-                        logger.debug(event)
-                        yield event
 
     def get_real_node_logfile(self) -> Path:
         """Return the path to the actual logfile that node.log points to"""

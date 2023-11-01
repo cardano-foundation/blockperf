@@ -14,12 +14,14 @@ from typing import Union
 class ConfigError(Exception):
     pass
 
+
 # Maximum age of logfile event in seconds, events older then this are discarded
 MAX_EVENT_AGE = 600
 BROKER_URL = "a12j2zhynbsgdv-ats.iot.eu-central-1.amazonaws.com"
 BROKER_PORT = 8883
 BROKER_KEEPALIVE = 180
 ROOTDIR = Path(__file__).parent
+MQTT_PUBLISH_TIMEOUT = 30  # seconds to wait for mqtt publish to finish
 
 MASKED_ADDRESSES = []
 if _masked_addresses := os.getenv("BLOCKPERF_MASKED_ADDRESSES", None):
@@ -29,9 +31,11 @@ if _masked_addresses := os.getenv("BLOCKPERF_MASKED_ADDRESSES", None):
         try:
             ipaddress.ip_address(addr)
             _validated_addresses.append(addr)
-        except ValueError:
-            raise ConfigError(f"Given address {addr} is not a valid ip address")
+        except ValueError as exc:
+            raise ConfigError(
+                f"Given address {addr} is not a valid ip address") from exc
     MASKED_ADDRESSES = _masked_addresses
+
 
 class AppConfig:
     config_parser: ConfigParser
@@ -55,10 +59,13 @@ class AppConfig:
         self.client_key
 
         # Check for needed config values
-        assert self.node_config.get("TraceChainSyncClient", False), "TraceChainSyncClient not enabled"
-        assert self.node_config.get("TraceBlockFetchClient", False), "TraceBlockFetchClient not enabled"
+        assert self.node_config.get(
+            "TraceChainSyncClient", False), "TraceChainSyncClient not enabled"
+        assert self.node_config.get(
+            "TraceBlockFetchClient", False), "TraceBlockFetchClient not enabled"
         # What are the other possible values? This should allow everything that is above Normal
-        assert self.node_config.get("TracingVerbosity", "") == "NormalVerbosity", "TracingVerbosity not enabled"
+        assert self.node_config.get(
+            "TracingVerbosity", "") == "NormalVerbosity", "TracingVerbosity not enabled"
 
     @property
     def node_config_file(self) -> Path:
@@ -76,19 +83,6 @@ class AppConfig:
     def node_config(self) -> dict:
         """Return Path to config.json file from env var, ini file or builtin default"""
         return json.loads(self.node_config_file.read_text())
-
-    @property
-    def mqtt_publish_timeout(self) -> int:
-        """Timeout for publishing new blockperfs to broker"""
-        mqtt_publish_timeout = os.getenv(
-            "BLOCKPERF_MQTT_PUBLISH_TIMEOUT",
-            self.config_parser.get(
-                "DEFAULT",
-                "mqtt_publish_timeout",
-                fallback=5,
-            )
-        )
-        return int(mqtt_publish_timeout)
 
     @property
     def node_configdir(self) -> Path:
@@ -130,16 +124,19 @@ class AppConfig:
 
     @property
     def active_slot_coef(self) -> float:
-        active_slot_coef = self._shelley_genesis_data.get("activeSlotsCoeff", None)
+        active_slot_coef = self._shelley_genesis_data.get(
+            "activeSlotsCoeff", None)
         if not active_slot_coef:
-            raise ConfigError("Error retrieving activeSlotsCoef from shelley-genesis")
+            raise ConfigError(
+                "Error retrieving activeSlotsCoef from shelley-genesis")
         return float(active_slot_coef)
 
     @property
     def relay_public_ip(self) -> str:
         relay_public_ip = os.getenv(
             "BLOCKPERF_RELAY_PUBLIC_IP",
-            self.config_parser.get("DEFAULT", "relay_public_ip", fallback=None),
+            self.config_parser.get(
+                "DEFAULT", "relay_public_ip", fallback=None),
         )
         if not relay_public_ip:
             raise ConfigError("'relay_public_ip' not set!")
@@ -150,7 +147,8 @@ class AppConfig:
         relay_public_port = int(
             os.getenv(
                 "BLOCKPERF_RELAY_PUBLIC_PORT",
-                self.config_parser.get("DEFAULT", "relay_public_port", fallback=3001),
+                self.config_parser.get(
+                    "DEFAULT", "relay_public_port", fallback=3001),
             )
         )
         return relay_public_port
