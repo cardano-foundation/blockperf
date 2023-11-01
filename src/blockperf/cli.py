@@ -14,6 +14,7 @@ from blockperf.config import AppConfig, ROOTDIR
 
 logger = logging.getLogger(__name__)
 
+
 def already_running() -> bool:
     """Checks if blockperf is already running."""
     blockperfs = []
@@ -29,19 +30,6 @@ def setup_logger():
     logger_config = yaml.safe_load(ROOTDIR.joinpath("logger.yaml").read_text())
     dictConfig(logger_config)
 
-'''
-def configure_logging(debug: bool = False):
-    """Configures the root logger"""
-    # Configure blockperf logger
-    lvl = logging.DEBUG if debug else logging.INFO
-    formatter = logging.Formatter("%(asctime)s %(levelname)s %(message)s")
-    formatter.datefmt = "%Y-%m-%d %H:%M:%S"
-    stdout_handler = logging.StreamHandler()
-    stdout_handler.setLevel(lvl)
-    stdout_handler.setFormatter(formatter)
-    logging.basicConfig(level=lvl, handlers=[stdout_handler])
-'''
-
 
 @click.group()
 def main():
@@ -49,10 +37,7 @@ def main():
     This script is based on blockperf.sh which collects data from the cardano-node
     and sends it to an aggregation services for further analysis.
     """
-    # dont print() but click.echo()
-    logger.info("Does main actually run with click?")
-    logger.info("Do i even need click? ")
-
+    pass
 
 
 @click.command("run", short_help="Run blockperf")
@@ -73,10 +58,6 @@ def cmd_run(config_file_path=None, verbose=False, debug=False):
     if already_running():
         click.echo(f"Is blockperf already running?")
         raise SystemExit
-
-    if debug:
-        click.echo("Debug enabled")
-
 
     app_config = AppConfig(config_file_path)
     app_config.check_blockperf_config()

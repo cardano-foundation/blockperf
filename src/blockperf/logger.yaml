@@ -11,14 +11,23 @@ formatters:
 handlers:
     console:
         class: "logging.StreamHandler"
-        level: "DEBUG"
+        level: "INFO"
         formatter: "simple"
         stream: "ext://sys.stdout"
 
+    logfile:
+        class: "logging.handlers.RotatingFileHandler"
+        level: "DEBUG"
+        filename: "blockperf.log"
+        formatter: "extra"
+        mode: "a"
+        maxBytes: 1000000
+        backupCount: 2
+
 loggers:
     blockperf:
-        level: DEBUG
+        handlers: [console]
 
 root:
     level: DEBUG
-    handlers: [console]
+    handlers: [logfile]

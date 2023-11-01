@@ -1,12 +1,12 @@
-import json
-import sys
-from enum import Enum
+# import json
+# import sys
+# from enum import Enum
 from typing import Union
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 import logging
 
 from blockperf import __version__ as blockperf_version
-from blockperf.config import AppConfig
+# from blockperf.config import AppConfig
 from blockperf.nodelogs import LogEventKind, LogEvent
 # logging.basicConfig(level=logging.DEBUG, format="(%(threadName)-9s) %(message)s")
 logger = logging.getLogger(__name__)
@@ -62,17 +62,14 @@ class BlockSample:
     """
 
     trace_events = list()
-    app_config: AppConfig
 
-    def __init__(self, events, app_config: AppConfig) -> None:
-        # Make sure they are order by their time
-        self.app_config = app_config
+    def __init__(self, events: list) -> None:
+        """Creates LogEvent and orders the events by at field"""
         events.sort(key=lambda x: x.at)
         self.trace_events = events
 
     def is_complete(self) -> bool:
-        """
-        """
+        """Determines if all needed LogEvents are in this sample"""
         if not self.first_trace_header:
             return False
         if not self.first_completed_block:
@@ -89,8 +86,6 @@ class BlockSample:
         for event in self.trace_events:
             if event.kind == LogEventKind.TRACE_DOWNLOADED_HEADER:
                 return event
-        # If there is no TRACE_DOWNLOADED_HEADER, we cant even figure out block_num or block_hash (currently)
-        logger.warning("No first %s", LogEventKind.TRACE_DOWNLOADED_HEADER)
         return None
 
     @property
@@ -99,10 +94,6 @@ class BlockSample:
         for event in self.trace_events:
             if event.kind == LogEventKind.COMPLETED_BLOCK_FETCH:
                 return event
-        logger.warning(
-            "No first %s; BlockNo: %s Hash: %s",
-            LogEventKind.COMPLETED_BLOCK_FETCH, self.block_num, self.block_hash
-        )
         return None
 
     @property
@@ -118,9 +109,17 @@ class BlockSample:
                 and event.remote_port == fcb.remote_port
             ):
                 return event
-        logger.error(
-            "No %s found for %s",
-            LogEventKind.SEND_FETCH_REQUEST, fcb)
+        return None
+
+    @property
+    def block_adopt(self) -> Union[LogEvent, None]:
+        """Return TraceEvent that this block was adopted with"""
+        for event in self.trace_events:
+            if event.kind in (
+                LogEventKind.ADDED_TO_CURRENT_CHAIN,
+                LogEventKind.SWITCHED_TO_A_FORK,
+            ):
+                return event
         return None
 
     @property
@@ -228,18 +227,6 @@ class BlockSample:
             return 0
         block_response_delta = fcb.at - frcb.at
         return int(block_response_delta.total_seconds() * 1000)
-
-    @property
-    def block_adopt(self) -> Union[LogEvent, None]:
-        """Return TraceEvent that this block was adopted with"""
-        for event in self.trace_events:
-            if event.kind in (
-                LogEventKind.ADDED_TO_CURRENT_CHAIN,
-                LogEventKind.SWITCHED_TO_A_FORK,
-            ):
-                return event
-        logger.error("%s has not been adopted!", self.block_hash_short)
-        return None
 
     @property
     def block_adopt_delta(self) -> int:

@@ -64,13 +64,10 @@ class App:
         producer_thread = threading.Thread(
             target=self.blocksample_producer, args=(), daemon=True)
         producer_thread.start()
-        # logger.info("Producer thread started")
 
-        # consumer = BlocklogConsumer(queue=self.q, app_config=self.app_config)
         consumer_thread = threading.Thread(
             target=self.blocksample_consumer, args=(), daemon=True)
         consumer_thread.start()
-        # logger.info("Consumer thread started")
 
         # Blocks main thread until all joined threads are finished
         logger.info("App starting producer and consumer threads")
@@ -142,7 +139,7 @@ class App:
                 self._blocksample_consumer()
             except Exception:
                 logger.exception(
-                    "Exception in blocksample_consumer; Restarting Loop")
+                    "Exception in blocksample_consumer; Restarting Loop", exc_info=True)
 
     def _blocksample_consumer(self):
         """
@@ -200,7 +197,7 @@ class App:
                 self._blocksample_producer()
             except Exception:
                 logger.exception(
-                    "Exception in blocksample_producer; Restarting Loop")
+                    "Exception in blocksample_producer; Restarting Loop", exc_info=True)
 
     def _blocksample_producer(self):
         """Producer thread that reads the logfile and puts blocksamples to queue.
@@ -244,9 +241,10 @@ class App:
             if not event.block_hash:
                 logger.debug("Event %s has no hash", event)
             _block_hash = event.block_hash
+            _block_hash_short = event.block_hash_short
 
             if not _block_hash in self.logevents:
-                logger.debug("New hash %s", event.block_hash_short)
+                logger.info("New hash %s", _block_hash_short)
                 # A new hash is seen, make a new list to store its events in
                 self.logevents[_block_hash] = {}
 
@@ -255,16 +253,24 @@ class App:
             if not event.kind in self.logevents[_block_hash]:
                 self.logevents[_block_hash][event.kind] = []
             self.logevents[_block_hash][event.kind].append(event)
-            # logger.debug(event)
-            # logger.debug(self.logevents[_block_hash].keys())
+            logger.debug(event)
 
-            # Check that all needed events are recorded for current _block_hash
-            if len(self.logevents[_block_hash].keys()) < 4:
-                continue
-
-            # Do not republish sample
+            # Do not event try to republish
             if _block_hash in self.published_hashes:
                 logger.debug("Already published %s", _block_hash)
+                continue
+
+            # Check that all needed events are recorded for current _block_hash
+            if not (
+                LogEventKind.TRACE_DOWNLOADED_HEADER in self.logevents[_block_hash].keys() and
+                LogEventKind.SEND_FETCH_REQUEST in self.logevents[_block_hash].keys() and
+                LogEventKind.COMPLETED_BLOCK_FETCH in self.logevents[_block_hash].keys() and (
+                    LogEventKind.ADDED_TO_CURRENT_CHAIN in self.logevents[_block_hash].keys(
+                    ) or LogEventKind.SWITCHED_TO_A_FORK in self.logevents[_block_hash].keys()
+                )
+            ):
+                logger.debug(
+                    "Not all event types collected for hash %s ", _block_hash_short)
                 continue
 
             # Flatten the events to feed all of them into BlockSample
@@ -272,14 +278,14 @@ class App:
             for event_kind_list in self.logevents[_block_hash].values():
                 all_events.extend(event_kind_list)
 
-            logger.debug("Creating sample for %s", _block_hash)
-            new_sample = BlockSample(all_events, self.app_config)
+            new_sample = BlockSample(all_events)
 
             # Check BlockSample has all needed Events to produce sample
             if not new_sample.is_complete():
-                logger.debug("Incomplete LogEvents for %s", _block_hash)
+                logger.debug("Incomplete LogEvents for %s", _block_hash_short)
                 continue
 
+            logger.info("Sample for %s created", _block_hash_short)
             self.q.put(new_sample)
             # Add hash to right side of deque
             self.published_hashes.append(_block_hash)
@@ -294,8 +300,8 @@ class App:
                 else:
                     logger.warning(
                         "Hash not found in logevents for deletion %s", removed_hash)
-            logger.debug("Recorded blocks %s - Published blocks %s",
-                         len(self.logevents.keys()), len(self.published_hashes))
+            logger.info("Recorded blocks %s - Published blocks %s",
+                        len(self.logevents.keys()), len(self.published_hashes))
 
     def logevents_systemd(self):
         """Generator that produces LogEvent Instances by reading the journald
@@ -333,6 +339,23 @@ class App:
                         logger.debug(event)
                         yield event
 
+    def get_real_node_logfile(self) -> Path:
+        """Return the path to the actual logfile that node.log points to"""
+        while True:
+            node_log_link = self.app_config.node_logfile
+            if not node_log_link.exists():
+                logger.warning(
+                    "Node log file does not exist %s", node_log_link)
+                time.sleep(2)
+            try:
+                real_node_log = os.path.realpath(
+                    node_log_link, strict=True)
+                return self.app_config.node_logdir.joinpath(real_node_log)
+            except OSError:
+                logger.warning(
+                    "Real node log not found from link %s", node_log_link)
+                time.sleep(2)
+
     def logevents_logfile(self):
         """Generator that "tails" the node log file and parses each. We are
         interested in certain things the node logs that indicate for example
@@ -357,55 +380,37 @@ class App:
         does the new file is opened.
 
         """
-
-        def _real_node_log() -> Path:
-            """Read the link that node_log points to and return the file path
-            """
-            while True:
-                node_log_link = self.app_config.node_logfile
-                if not node_log_link.exists():
-                    logger.warning(
-                        "Node log file does not exist %s", node_log_link)
-                    time.sleep(10)
-                try:
-                    real_node_log = os.path.realpath(
-                        node_log_link, strict=True)
-                    # logger.debug(f"Resolved {node_log_link} to {real_node_log}")
-                    return self.app_config.node_logdir.joinpath(real_node_log)
-                except OSError:
-                    logger.warning(
-                        "Real node log not found from link %s", node_log_link)
-                    time.sleep(10)
-
         first_loop = True
         while True:
-            real_node_log = _real_node_log()
+            real_node_log = self.get_real_node_logfile()
+            lines_read = 0
             same_file = True
-            with open(real_node_log, "r") as fp:
-                # Only seek to the end of the file, if we just did a "fresh" start
-                if first_loop == True:
+            with open(real_node_log, "r", 1, "utf-8") as fp:
+                # Avoid reading through old node.log on fresh start
+                if first_loop:
                     fp.seek(0, 2)
                     first_loop = False
-                logger.debug("Opened %s", real_node_log)
+                logger.info("Opened %s", real_node_log)
                 while same_file:
                     new_line = fp.readline()
                     if not new_line:
                         # if no new_line is returned check if the symlink changed
-                        if real_node_log.name != _real_node_log().name:
-                            logger.debug("Symlink changed")
+                        if real_node_log.name != self.get_real_node_logfile().name:
+                            logger.info("Symlink changed")
                             same_file = False
-                        time.sleep(0.1)
+                        time.sleep(0.5)
                         continue
-
-                    # Create LogEvent from the new line provided
+                    lines_read += 1
                     event = LogEvent.from_logline(new_line)
                     if event:
                         yield event
 
                 # Currently opened logfile has change try to read all of the
                 # rest in one go!
-                logger.debug("Reading the rest of it ... !!! ")
-                for line in fp.readlines():
-                    event = LogEvent.from_logline(line)
-                    if event:
-                        yield event
+                # logger.debug("Reading the rest of it ... !!! ")
+                # for line in fp.readlines():
+                #    event = LogEvent.from_logline(line)
+                #    if event:
+                #        yield event
+                logger.info("Read %s lines from %s ",
+                            lines_read, real_node_log)
