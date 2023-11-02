@@ -118,8 +118,6 @@ BLOCKPERF_AMAZON_CA="XXX"
 ```bash
 # If you have set up the env vars
 blockperf run
-# Or specify the ini file
-blockperf run /path/to/config.ini
 ```
 
 **As a systemd service**

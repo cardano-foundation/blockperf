@@ -3,14 +3,10 @@ import logging
 from logging.config import dictConfig
 import argparse
 import sys
-import os
-from typing import Union
-from pathlib import Path
-
 import psutil
 
 from blockperf.app import App
-from blockperf.config import AppConfig, ROOTDIR
+from blockperf.config import AppConfig
 
 logger = logging.getLogger(__name__)
 
@@ -83,15 +79,6 @@ def setup_argparse():
     return parser.parse_args()
 
 
-def cmd_run(config_file_path=None):
-    """Command run"""
-    if already_running():
-        sys.exit("Blockperf is already running ... ")
-    app_config = AppConfig(config_file_path)
-    app = App(app_config)
-    app.run()
-
-
 def main():
     """
     This script is based on blockperf.sh which collects data from the cardano-node
@@ -99,9 +86,15 @@ def main():
     """
     args = setup_argparse()
     setup_logger(args.debug)
+    # Ensure there is only one instance of blockperf running
+    if already_running():
+        sys.exit("Blockperf is already running")
+
+    app_config = AppConfig()
+    app = App(app_config)
 
     if args.command == "run":
-        cmd_run()
+        app.run()
     else:
         sys.exit(f"I dont know what {args.command} means")
 

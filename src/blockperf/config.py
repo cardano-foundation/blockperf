@@ -51,6 +51,16 @@ class AppConfig:
             self.config_parser.read(config_file)
         self.verbose = verbose
         self.check_blockperf_config()
+        msg = (
+            f"\n----------------------------------------------------\n"
+            f"Node config:   {self.node_config_file}\n"
+            f"Node logfile:  {self.node_logfile}\n"
+            f"Client Name:   {self.name}\n"
+            f"Networkmagic:  {self.network_magic}\n"
+            # f"..... {blocksample.block_delay} sec\n\n"
+            f"----------------------------------------------------\n\n"
+        )
+        sys.stdout.write(msg)
 
     def check_blockperf_config(self):
         """Try to check whether or not everything that is fundamentally needed

@@ -35,17 +35,10 @@ class App:
         self.app_config = config
 
     def run(self):
-        """Run the App by creating the two threads and starting them."""
-        msg = (
-            f"\n----------------------------------------------------\n"
-            f"Node config:   {self.app_config.node_config_file}\n"
-            f"Node logfile:  {self.app_config.node_logfile}\n"
-            f"Client Name:   {self.app_config.name}\n"
-            f"Networkmagic:  {self.app_config.network_magic}\n"
-            # f"..... {blocksample.block_delay} sec\n\n"
-            f"----------------------------------------------------\n\n"
-        )
-        sys.stdout.write(msg)
+        """Runs the App by creating the mqtt client and two threads.
+        One thread produces reads from the node logs and produces blocksamples
+        while the other consumes these samples and publishes them to mqtt broker.
+        """
         self.mqtt_client = MQTTClient(
             ca_certfile=self.app_config.amazon_ca,
             client_certfile=self.app_config.client_cert,
@@ -168,22 +161,35 @@ class App:
                     "Exception in blocksample_producer; Restarting Loop", exc_info=True)
 
     def _blocksample_producer(self):
-        """Producer thread that reads the logfile and puts blocksamples to queue.
+        """Producer thread that reads the logfile and puts blocksamples into the queue.
 
-        The for loop runs forever over all the events produced from the logfile.
-        Not all events seen in the logfile will make it into the for loop below.
-        See logevents(). The ones that do are stored.
-        For every new hash seen a new list ist created and all subsequent events
-        will be added to it. The list itself will be stored in a dictionary
-        called self.logevents. The key for the dictionary is the blockhash
-        and the value is the list of all events for that hash. Thus only events
-        that have a hash can be bubbled up from the logfile.
+        The for loop is supposed to run forever over the events from the logfile
+        produced by logevents_logfile(). The nodelogs.LogEvents class implements
+        these events.
 
-        Every now and then an event is seen that indicates a block has been
-        added to the local chain. When that happens a new BlockSample is created
-        from all the events for that given block (hash). The sample is the
-        put into the queue and subsequently send over mqtt to the blockperf
-        backend.
+        From all the events that are possibly read from the logfile only
+        some are of interest.
+
+            * Must be of a specific kind
+                TRACE_DOWNLOADED_HEADER, SEND_FETCH_REQUEST, COMPLETED_BLOCK_FETCH,
+                ADDED_TO_CURRENT_CHAIN, SWITCHED_TO_A_FORK
+            * Must not be too old (invalid)
+            * Must have a blockhash
+
+        Once a block has been adopted to the local chain, a sample from that
+        block is created and send to the broker.To be able to produce a sample
+        for a given block all its events are inspected and the data is fetched.
+        However, not all blocks end up being adopted and the events may be
+        written to the logfile in an arbitrary order.
+
+        The self.logevents dictionary holds subdictionaries for all kinds of
+        events (only the kinds that have not been filtered out yet). That way
+        its easy to check whether or not all events to create a sample are
+        recorded yet or not.
+
+        Once that is the case a new sample is created by collecting all events
+        and instanciating BlockSample(). If the sample is complete it is put
+        into the queue to be picked up by the other thread and sent to the broker.
 
         The recorded block events need to be delete at some point again. But
         they should not be deleted directly after the blocksample has been
@@ -202,10 +208,11 @@ class App:
             ):
                 continue
 
+            # Ensure we dont work with events that are invaid
             if not event.is_valid():
-                logger.debug("Invalid event %s", event)
                 continue
 
+            # Ensure we dont work with events that do not have a hash
             if not event.block_hash:
                 logger.debug("Event %s has no hash", event)
             _block_hash = event.block_hash
@@ -217,7 +224,7 @@ class App:
                 self.logevents[_block_hash] = {}
 
             # All events recoreded are stored in different lists based
-            # on the event kind within logevents.
+            # on the event kind within logevents
             if not event.kind in self.logevents[_block_hash]:
                 self.logevents[_block_hash][event.kind] = []
             self.logevents[_block_hash][event.kind].append(event)
@@ -272,7 +279,7 @@ class App:
                         len(self.logevents.keys()), len(self.published_hashes))
 
     def get_real_node_logfile(self) -> Path:
-        """Return the path to the actual logfile that node.log points to"""
+        """Return the path to the logfile that node.log points to"""
         while True:
             node_log_link = self.app_config.node_logfile
             # At this point there must not be an empty logfile
@@ -293,28 +300,15 @@ class App:
                 time.sleep(2)
 
     def logevents_logfile(self):
-        """Generator that "tails" the node log file and parses each. We are
-        interested in certain things the node logs that indicate for example
-        that a new header was announce by a peer or that the node initiated
-        (or completed) the download of a given block. All these events of
-        interest will the be yielded to the caller for further processing.
-        See blocksample_producer()
+        """Generator that "tails" the nodes log file and produces LogEvents
+        for each new line. The nodes logfile is actually a symlink and just
+        opening up that symlink will not work since it eventually will be
+        relinked to a new file and the file handle will be invalid.
 
-        This function will only yield a given event if:
-        * It is not older then a certain amount of time.
-            For example, if a node needs to catch up to the network,
-            it will add a quite a few new Blocks that are old and we are
-            not interested in those. The age an event must be under is
-            configure with the max_age setting.
-        * It is of one of the interesting kinds
-
-        The node writes its logs to a symlink. That will eventually rotate so
-        this script can not open that file and receive new lines forever.
-        The node will eventually create a new logfile and blockperf will need
-        to cope with that. It does so by opening the file the symlink points to
-        and constantly checking whether or not the symlinked has changed. If it
-        does the new file is opened.
-
+        Thats why i open the file the symlink points to. If no newlines
+        are being written to that file the symlink is checked again whether
+        it has a new target. If so the new logfile is opened and again read
+        line by line producing LogEvent instances.
         """
         first_loop = True
         while True:
