@@ -83,7 +83,7 @@ class MQTTClient(mqtt.Client):
             json_payload = json.dumps(payload)
             publish_properties = Properties(PacketTypes.PUBLISH)
             publish_properties.MessageExpiryInterval = MESSAGE_EXPIRY_INTERVAL
-
+            logger.info("Publishing sample to %s", topic)
             # call the actuall clients publish method and receive the message_info
             message_info: MQTTMessageInfo = super().publish(
                 topic=topic, payload=json_payload, properties=publish_properties)
