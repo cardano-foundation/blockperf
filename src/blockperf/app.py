@@ -208,8 +208,8 @@ class App:
             ):
                 continue
 
-            # Ensure we dont work with events that are invaid
-            if not event.is_valid():
+            # Discard events that are too old
+            if event.is_too_old():
                 continue
 
             # Ensure we dont work with events that do not have a hash
@@ -258,6 +258,10 @@ class App:
             # Check BlockSample has all needed Events to produce sample
             if not new_sample.is_complete():
                 logger.debug("Incomplete LogEvents for %s", _block_hash_short)
+                continue
+
+            # Check values are in acceptable ranges
+            if not new_sample.is_sane():
                 continue
 
             logger.info("Sample for %s created", _block_hash_short)

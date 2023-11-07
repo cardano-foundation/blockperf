@@ -174,14 +174,19 @@ class LogEvent:
             _repr += f" BlockNo: {self.block_num}"
         return _repr
 
-    def is_valid(self) -> bool:
-        """Checks whether the event is valid (not too old)"""
-        bad_before = int(datetime.now().timestamp()) - int(
-            timedelta(seconds=MAX_EVENT_AGE).total_seconds()
-        )
-        if int(self.at.timestamp()) < bad_before:
-            return False
-        return True
+    def is_too_old(self) -> bool:
+        """Checks whether the event is too old or not.
+
+        An event is too old, if the time it was written to the logfile
+        is older then MAX_EVENT_AGE. This is to prevent LogEvents from being
+        considered at all for example, because it walks through a big logfile
+        of the node that has alot of older events in it. MAX_EVEN
+
+        """
+        bad_before = int(datetime.now().timestamp()) - MAX_EVENT_AGE
+        if int(self.at.timestamp()) >= bad_before:
+            return True
+        return False
 
     @classmethod
     def from_logline(cls, logline: str) -> Union["LogEvent", None]:
