@@ -300,14 +300,15 @@ class BlockSample:
             invalidAddress bsBlockRemoteAddr
         )
         """
-        if (self.block_num < 4476955
-            or self.slot_num < 4479244
-            or not (0 < len(self.block_hash) < 128)
-            or not (0 < self.block_size < 10000000)
-            or not (-6000 < self.header_delta < 600000)
-            or not (-6000 < self.block_request_delta < 600000)
-            or not (-6000 < self.block_response_delta < 600000)
-            or not (-6000 < self.block_adopt_delta < 600000)
+        if (
+                0 < self.block_num
+            and 0 < self.slot_num
+            and 0 < len(self.block_hash) < 128
+            and 0 < self.block_size < 10000000
+            and -6000 < self.header_delta < 600000
+            and -6000 < self.block_request_delta < 600000
+            and -6000 < self.block_response_delta < 600000
+            and -6000 < self.block_adopt_delta < 600000
         ):
-            return False
-        return True
+            return True
+        return False

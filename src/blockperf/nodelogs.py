@@ -184,7 +184,7 @@ class LogEvent:
 
         """
         bad_before = int(datetime.now().timestamp()) - MAX_EVENT_AGE
-        if int(self.at.timestamp()) >= bad_before:
+        if int(self.at.timestamp()) < bad_before:
             return True
         return False
 
