@@ -1,5 +1,6 @@
 import sys
 import collections
+from datetime import datetime
 import json
 import logging
 import queue
@@ -26,6 +27,7 @@ class App:
     app_config: AppConfig
     node_config: dict
     mqtt_client: MQTTClient
+    start_time: int
 
     logevents = {}  # holds a list of events for each block_hash
     published_hashes = collections.deque()
@@ -33,6 +35,7 @@ class App:
     def __init__(self, config: AppConfig) -> None:
         self.q = queue.Queue(maxsize=50)
         self.app_config = config
+        self.start_time = int(datetime.now().timestamp())
 
     def run(self):
         """Runs the App by creating the mqtt client and two threads.
@@ -208,8 +211,8 @@ class App:
             ):
                 continue
 
-            # Discard events that are too old
-            if event.is_too_old():
+            # Discard LogEvents that are older then blockperfs startup time
+            if int(event.at.timestamp()) < self.start_time:
                 continue
 
             # Ensure we dont work with events that do not have a hash

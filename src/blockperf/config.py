@@ -17,9 +17,6 @@ logger = logging.getLogger(__name__)
 class ConfigError(Exception):
     pass
 
-
-# Maximum age of logfile event in seconds, events older then this are discarded
-MAX_EVENT_AGE = 120
 BROKER_HOST = "a12j2zhynbsgdv-ats.iot.eu-central-1.amazonaws.com"
 BROKER_PORT = 8883
 BROKER_KEEPALIVE = 180
