@@ -1,4 +1,3 @@
-import sys
 import collections
 from datetime import datetime
 import json
@@ -8,9 +7,7 @@ import os
 import threading
 import time
 from pathlib import Path
-from datetime import datetime, timedelta
-from timeit import default_timer as timer
-
+from datetime import datetime
 from blockperf import __version__ as blockperf_version
 from blockperf.config import AppConfig
 
@@ -30,7 +27,8 @@ class App:
     start_time: int
 
     logevents = {}  # holds a list of events for each block_hash
-    published_hashes = collections.deque()
+    published_hashes = []  # the list of all published hashes
+    working_hashes = collections.deque()  # Stores the last X hashes before
 
     def __init__(self, config: AppConfig) -> None:
         self.q = queue.Queue(maxsize=50)
@@ -48,15 +46,17 @@ class App:
             client_keyfile=self.app_config.client_key,
             host=self.app_config.broker_host,
             port=self.app_config.broker_port,
-            keepalive=self.app_config.broker_keepalive
+            keepalive=self.app_config.broker_keepalive,
         )
 
         producer_thread = threading.Thread(
-            target=self.blocksample_producer, args=(), daemon=True)
+            target=self.blocksample_producer, args=(), daemon=True
+        )
         producer_thread.start()
 
         consumer_thread = threading.Thread(
-            target=self.blocksample_consumer, args=(), daemon=True)
+            target=self.blocksample_consumer, args=(), daemon=True
+        )
         consumer_thread.start()
 
         # Blocks main thread until all joined threads are finished
@@ -129,7 +129,8 @@ class App:
                 self._blocksample_consumer()
             except Exception:
                 logger.exception(
-                    "Exception in blocksample_consumer; Restarting Loop", exc_info=True)
+                    "Exception in blocksample_consumer; Restarting Loop", exc_info=True
+                )
 
     def _blocksample_consumer(self):
         """Consumer thread publishes each sample the consumer puts into the queue"""
@@ -143,13 +144,15 @@ class App:
 
         while True:
             logger.debug(
-                "Waiting for next item in queue, Current size: %s", self.q.qsize())
+                "Waiting for next item in queue, Current size: %s", self.q.qsize()
+            )
             blocksample = self.q.get()
             self.print_block_stats(blocksample)
 
             payload = self.mqtt_payload_from(blocksample)
-            logger.debug(json.dumps(payload, indent=4,
-                         sort_keys=True, ensure_ascii=False))
+            logger.debug(
+                json.dumps(payload, indent=4, sort_keys=True, ensure_ascii=False)
+            )
 
             # new
             topic = f"{self.app_config.topic}/{blocksample.block_hash}"
@@ -161,7 +164,8 @@ class App:
                 self._blocksample_producer()
             except Exception:
                 logger.exception(
-                    "Exception in blocksample_producer; Restarting Loop", exc_info=True)
+                    "Exception in blocksample_producer; Restarting Loop", exc_info=True
+                )
 
     def _blocksample_producer(self):
         """Producer thread that reads the logfile and puts blocksamples into the queue.
@@ -207,7 +211,7 @@ class App:
                 LogEventKind.SEND_FETCH_REQUEST,
                 LogEventKind.COMPLETED_BLOCK_FETCH,
                 LogEventKind.ADDED_TO_CURRENT_CHAIN,
-                LogEventKind.SWITCHED_TO_A_FORK
+                LogEventKind.SWITCHED_TO_A_FORK,
             ):
                 continue
 
@@ -221,14 +225,17 @@ class App:
             _block_hash = event.block_hash
             _block_hash_short = event.block_hash_short
 
-            if not _block_hash in self.logevents:
+            if _block_hash not in self.logevents:
                 logger.info("New hash %s", _block_hash_short)
                 # A new hash is seen, make a new list to store its events in
                 self.logevents[_block_hash] = {}
 
+            if _block_hash not in self.working_hashes:
+                self.working_hashes.append(_block_hash)
+
             # All events recoreded are stored in different lists based
             # on the event kind within logevents
-            if not event.kind in self.logevents[_block_hash]:
+            if event.kind not in self.logevents[_block_hash]:
                 self.logevents[_block_hash][event.kind] = []
             self.logevents[_block_hash][event.kind].append(event)
             logger.debug(event)
@@ -240,15 +247,22 @@ class App:
 
             # Check that all needed events are recorded for current _block_hash
             if not (
-                LogEventKind.TRACE_DOWNLOADED_HEADER in self.logevents[_block_hash].keys() and
-                LogEventKind.SEND_FETCH_REQUEST in self.logevents[_block_hash].keys() and
-                LogEventKind.COMPLETED_BLOCK_FETCH in self.logevents[_block_hash].keys() and (
-                    LogEventKind.ADDED_TO_CURRENT_CHAIN in self.logevents[_block_hash].keys(
-                    ) or LogEventKind.SWITCHED_TO_A_FORK in self.logevents[_block_hash].keys()
+                LogEventKind.TRACE_DOWNLOADED_HEADER
+                in self.logevents[_block_hash].keys()
+                and LogEventKind.SEND_FETCH_REQUEST
+                in self.logevents[_block_hash].keys()
+                and LogEventKind.COMPLETED_BLOCK_FETCH
+                in self.logevents[_block_hash].keys()
+                and (
+                    LogEventKind.ADDED_TO_CURRENT_CHAIN
+                    in self.logevents[_block_hash].keys()
+                    or LogEventKind.SWITCHED_TO_A_FORK
+                    in self.logevents[_block_hash].keys()
                 )
             ):
                 logger.debug(
-                    "Not all event types collected for hash %s ", _block_hash_short)
+                    "Not all event types collected for hash %s ", _block_hash_short
+                )
                 continue
 
             # Flatten the events to feed all of them into BlockSample
@@ -265,25 +279,34 @@ class App:
 
             # Check values are in acceptable ranges
             if not new_sample.is_sane():
+                logger.debug("Insane values for sample %s", new_sample)
                 continue
 
             logger.info("Sample for %s created", _block_hash_short)
             self.q.put(new_sample)
-            # Add hash to right side of deque
-            self.published_hashes.append(_block_hash)
-            if len(self.published_hashes) > self.app_config.active_slot_coef * 3600:
-                # Remove from left of deque
-                removed_hash = self.published_hashes.popleft()
+
+            # To not get published_hashes and logevents get too big over time
+            # the entries need to get removed agin. However, some hashes
+            # may not be adopted right away so we need some form of window
+            # of the last X blocks. Thats what working_hashes is supposed to provide.
+            # It should keep the last ~180 Blocks/Hashes around before deleting them
+
+            if len(self.working_hashes) > self.app_config.active_slot_coef * 3600:
+                removed_hash = self.working_hashes.popleft()
                 # Delete events for hash from logevents
                 if removed_hash in self.logevents:
                     del self.logevents[removed_hash]
-                    logger.debug(
-                        "Removed %s from published_hashes", removed_hash)
-                else:
-                    logger.warning(
-                        "Hash not found in logevents for deletion %s", removed_hash)
-            logger.info("Recorded blocks %s - Published blocks %s",
-                        len(self.logevents.keys()), len(self.published_hashes))
+                    logger.debug("Removed %s from working_hashes", removed_hash)
+                if removed_hash in self.published_hashes:
+                    del self.published_hashes[self.published_hashes.index(removed_hash)]
+                    logger.debug("Removed %s from published_hashes", removed_hash)
+
+            logger.info(
+                "LogEvents for %s blocks - Working on %s blocks, Published %s samples ",
+                len(self.logevents.keys()),
+                len(self.working_hashes),
+                len(self.published_hashes),
+            )
 
     def get_real_node_logfile(self) -> Path:
         """Return the path to the logfile that node.log points to"""
@@ -292,18 +315,15 @@ class App:
             # At this point there must not be an empty logfile
             assert node_log_link, "Node logfile not found"
             if not node_log_link.exists():
-                logger.warning(
-                    "Node log file does not exist %s", node_log_link)
+                logger.warning("Node log file does not exist %s", node_log_link)
                 time.sleep(2)
             try:
-                real_node_log = os.path.realpath(
-                    node_log_link, strict=True)
+                real_node_log = os.path.realpath(node_log_link, strict=True)
                 node_logdir = self.app_config.node_logdir
                 assert node_logdir, "Node logdir not found"
                 return node_logdir.joinpath(real_node_log)
             except OSError:
-                logger.warning(
-                    "Real node log not found from link %s", node_log_link)
+                logger.warning("Real node log not found from link %s", node_log_link)
                 time.sleep(2)
 
     def logevents_logfile(self):
@@ -349,5 +369,4 @@ class App:
                 #    event = LogEvent.from_logline(line)
                 #    if event:
                 #        yield event
-                logger.info("Read %s lines from %s ",
-                            lines_read, real_node_log)
+                logger.info("Read %s lines from %s ", lines_read, real_node_log)
