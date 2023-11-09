@@ -281,3 +281,7 @@ class AppConfig:
             )
         )
         return node_service_unit
+
+    @property
+    def max_concurrent_blocks(self):
+        return self.active_slot_coef * 3600

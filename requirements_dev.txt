@@ -1,4 +1,0 @@
--r requirements.txt
-pudb
-tox==4.4.6
-cryptography==41.0.1

@@ -28,7 +28,7 @@ class App:
     start_time: int
 
     logevents = {}  # holds a list of events for each block_hash
-    published_hashes = []  # the list of all published hashes
+    published_blocks = []  # the list of all published hashes
     working_hashes = collections.deque()  # Stores the last X hashes before
 
     def __init__(self, config: AppConfig) -> None:
@@ -145,6 +145,32 @@ class App:
             topic = f"{self.app_config.topic}/{blocksample.block_hash}"
             self.mqtt_client.publish(topic, payload)
 
+    def ensure_maxblocks(self):
+        """
+        * logevents holds all events recorded for all hashes seen.
+        * published_blocks holds hashes of all published blocks.
+
+        LogEvents hashes eventually get adopted (or not). But this may
+        take some time. I want to wait for some time (config.max_concurrent_blocks)
+        before i drop that hash.
+
+        Samples for blocks that already have a sample published should not get
+        republished. Thus the list of published_blocks.
+
+        To not have both lists grow indefinetly i use the deque in self.working_hashes.
+        Once it reaches a certain size, the hashes that are added first will
+        get popped of and delete from the other two lists.
+        """
+        if len(self.working_hashes) > self.app_config.max_concurrent_blocks:
+            removed_hash = self.working_hashes.popleft()
+            # Delete events for hash from logevents
+            if removed_hash in self.logevents:
+                del self.logevents[removed_hash]
+                logger.debug("Removed %s from working_hashes", removed_hash)
+            if removed_hash in self.published_blocks:
+                del self.published_blocks[self.published_blocks.index(removed_hash)]
+                logger.debug("Removed %s from published_blocks", removed_hash)
+
     def blocksample_producer(self):
         """Producer thread that reads the logfile and puts blocksamples into the queue.
 
@@ -183,6 +209,7 @@ class App:
         from the shelley config and the assumption to hold "the last hour" worth
         of blocks. Which currently is 180.
         """
+
         for event in self.logevents_logfile():
             if event.kind not in (
                 LogEventKind.TRACE_DOWNLOADED_HEADER,
@@ -193,27 +220,7 @@ class App:
             ):
                 continue
 
-            # To not get published_hashes and logevents get too big over time
-            # the entries need to get removed agin. However, some hashes
-            # may not be adopted right away so we need some form of window
-            # of the last X blocks. Thats what working_hashes is supposed to provide.
-            # It should keep the last ~180 Blocks/Hashes around before deleting them
-            if len(self.working_hashes) > self.app_config.active_slot_coef * 3600:
-                removed_hash = self.working_hashes.popleft()
-                # Delete events for hash from logevents
-                if removed_hash in self.logevents:
-                    del self.logevents[removed_hash]
-                    logger.debug("Removed %s from working_hashes", removed_hash)
-                if removed_hash in self.published_hashes:
-                    del self.published_hashes[self.published_hashes.index(removed_hash)]
-                    logger.debug("Removed %s from published_hashes", removed_hash)
-
-            logger.info(
-                "LogEvents for %s blocks - Working on %s blocks, Published %s samples ",
-                len(self.logevents.keys()),
-                len(self.working_hashes),
-                len(self.published_hashes),
-            )
+            self.ensure_maxblocks()
 
             # Discard LogEvents that are older then blockperfs startup time
             if int(event.at.timestamp()) < self.start_time:
@@ -241,7 +248,7 @@ class App:
             logger.debug(event)
 
             # Do not event try to republish
-            if _block_hash in self.published_hashes:
+            if _block_hash in self.published_blocks:
                 logger.debug("Already published %s", _block_hash)
                 continue
 
@@ -284,6 +291,12 @@ class App:
 
             logger.info("Sample for %s created", _block_hash_short)
             self.q.put(new_sample)
+            logger.debug(
+                "LogEvents for %s blocks - Working on %s blocks, Published %s samples ",
+                len(self.logevents.keys()),
+                len(self.working_hashes),
+                len(self.published_blocks),
+            )
 
     def get_real_node_logfile(self) -> Path:
         """Return the path to the logfile that node.log points to"""
