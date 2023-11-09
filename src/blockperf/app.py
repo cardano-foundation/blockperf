@@ -1,3 +1,4 @@
+import sys
 import collections
 from datetime import datetime
 import json
@@ -40,30 +41,32 @@ class App:
         One thread produces reads from the node logs and produces blocksamples
         while the other consumes these samples and publishes them to mqtt broker.
         """
-        self.mqtt_client = MQTTClient(
-            ca_certfile=self.app_config.amazon_ca,
-            client_certfile=self.app_config.client_cert,
-            client_keyfile=self.app_config.client_key,
-            host=self.app_config.broker_host,
-            port=self.app_config.broker_port,
-            keepalive=self.app_config.broker_keepalive,
-        )
+        try:
+            self.mqtt_client = MQTTClient(
+                ca_certfile=self.app_config.amazon_ca,
+                client_certfile=self.app_config.client_cert,
+                client_keyfile=self.app_config.client_key,
+                host=self.app_config.broker_host,
+                port=self.app_config.broker_port,
+                keepalive=self.app_config.broker_keepalive,
+            )
 
-        producer_thread = threading.Thread(
-            target=self.blocksample_producer, args=(), daemon=True
-        )
-        producer_thread.start()
+            # Sometimes the connect took a moment to settle. To not have
+            # the consumer accept messages (and not be able to publish)
+            # i decided to ensure the connection is established this way
+            while not self.mqtt_client.is_connected:
+                logger.debug("Waiting for mqtt connection ... ")
+                time.sleep(0.5)  # Wait until connected to broker
 
-        consumer_thread = threading.Thread(
-            target=self.blocksample_consumer, args=(), daemon=True
-        )
-        consumer_thread.start()
+            consumer_thread = threading.Thread(
+                target=self.blocksample_consumer, args=(), daemon=True
+            )
+            consumer_thread.start()
 
-        # Blocks main thread until all joined threads are finished
-        logger.info("App starting producer and consumer threads")
-        producer_thread.join()
-        consumer_thread.join()
-        logger.info("App finished run().")
+            self.blocksample_producer()
+        except KeyboardInterrupt:
+            sys.stdout.write("Closed")
+            return
 
     def print_block_stats(self, blocksample: BlockSample) -> None:
         """
@@ -124,23 +127,7 @@ class App:
         return payload
 
     def blocksample_consumer(self):
-        while True:
-            try:
-                self._blocksample_consumer()
-            except Exception:
-                logger.exception(
-                    "Exception in blocksample_consumer; Restarting Loop", exc_info=True
-                )
-
-    def _blocksample_consumer(self):
         """Consumer thread publishes each sample the consumer puts into the queue"""
-
-        # Sometimes the connect took a moment to settle. To not have
-        # the consumer accept messages (and not be able to publish)
-        # i decided to ensure the connection is established this way
-        while not self.mqtt_client.is_connected:
-            logger.debug("Waiting for mqtt connection ... ")
-            time.sleep(0.5)  # Wait until connected to broker
 
         while True:
             logger.debug(
@@ -159,15 +146,6 @@ class App:
             self.mqtt_client.publish(topic, payload)
 
     def blocksample_producer(self):
-        while True:
-            try:
-                self._blocksample_producer()
-            except Exception:
-                logger.exception(
-                    "Exception in blocksample_producer; Restarting Loop", exc_info=True
-                )
-
-    def _blocksample_producer(self):
         """Producer thread that reads the logfile and puts blocksamples into the queue.
 
         The for loop is supposed to run forever over the events from the logfile
@@ -226,7 +204,7 @@ class App:
             _block_hash_short = event.block_hash_short
 
             if _block_hash not in self.logevents:
-                logger.info("New hash %s", _block_hash_short)
+                logger.debug("New hash %s", _block_hash_short)
                 # A new hash is seen, make a new list to store its events in
                 self.logevents[_block_hash] = {}
 
@@ -349,13 +327,14 @@ class App:
                     first_loop = False
                 logger.info("Opened %s", real_node_log)
                 while same_file:
+                    new_lines = fp.readlines()
                     new_line = fp.readline()
                     if not new_line:
                         # if no new_line is returned check if the symlink changed
                         if real_node_log.name != self.get_real_node_logfile().name:
                             logger.info("Symlink changed")
                             same_file = False
-                        time.sleep(0.5)
+                        time.sleep(1)
                         continue
                     lines_read += 1
                     event = LogEvent.from_logline(new_line)
