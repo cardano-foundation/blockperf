@@ -9,7 +9,7 @@ from datetime import datetime, timezone, timedelta
 import logging
 
 from blockperf import __version__ as blockperf_version
-from blockperf.config import AppConfig, MAX_EVENT_AGE, MASKED_ADDRESSES
+from blockperf.config import AppConfig, MASKED_ADDRESSES
 
 # logging.basicConfig(level=logging.DEBUG, format="(%(threadName)-9s) %(message)s")
 logger = logging.getLogger(__name__)
@@ -23,7 +23,9 @@ class LogEventKind(Enum):
     ADDED_TO_CURRENT_CHAIN = "TraceAddBlockEvent.AddedToCurrentChain"
     ADD_BLOCK_VALIDATION = "TraceAddBlockEvent.AddBlockValidation.ValidCandidate"
     TRY_SWITCH_TO_A_FORK = "TraceAddBlockEvent.TrySwitchToAFork"
-    IGNORE_BLOCK_ALREADY_IN_VOLATILE_DB = "TraceAddBlockEvent.IgnoreBlockAlreadyInVolatileDB"
+    IGNORE_BLOCK_ALREADY_IN_VOLATILE_DB = (
+        "TraceAddBlockEvent.IgnoreBlockAlreadyInVolatileDB"
+    )
 
     # ChainSyncClientEvent
     TRACE_DOWNLOADED_HEADER = "ChainSyncClientEvent.TraceDownloadedHeader"
@@ -150,14 +152,10 @@ class LogEvent:
         if self.newtip:
             self.newtip = self.newtip.split("@")[0]
 
-        self.local_addr = self.data.get(
-            "peer", {}).get("local", {}).get("addr", "")
-        self.local_port = self.data.get(
-            "peer", {}).get("local", {}).get("port", "")
-        self.remote_addr = self.data.get(
-            "peer", {}).get("remote", {}).get("addr", "")
-        self.remote_port = self.data.get(
-            "peer", {}).get("remote", {}).get("port", "")
+        self.local_addr = self.data.get("peer", {}).get("local", {}).get("addr", "")
+        self.local_port = self.data.get("peer", {}).get("local", {}).get("port", "")
+        self.remote_addr = self.data.get("peer", {}).get("remote", {}).get("addr", "")
+        self.remote_port = self.data.get("peer", {}).get("remote", {}).get("port", "")
 
     def __repr__(self):
         _kind = self.kind.value
@@ -173,15 +171,6 @@ class LogEvent:
         if self.block_num:
             _repr += f" BlockNo: {self.block_num}"
         return _repr
-
-    def is_valid(self) -> bool:
-        """Checks whether the event is valid (not too old)"""
-        bad_before = int(datetime.now().timestamp()) - int(
-            timedelta(seconds=MAX_EVENT_AGE).total_seconds()
-        )
-        if int(self.at.timestamp()) < bad_before:
-            return False
-        return True
 
     @classmethod
     def from_logline(cls, logline: str) -> Union["LogEvent", None]:

@@ -17,9 +17,6 @@ logger = logging.getLogger(__name__)
 class ConfigError(Exception):
     pass
 
-
-# Maximum age of logfile event in seconds, events older then this are discarded
-MAX_EVENT_AGE = 600
 BROKER_HOST = "a12j2zhynbsgdv-ats.iot.eu-central-1.amazonaws.com"
 BROKER_PORT = 8883
 BROKER_KEEPALIVE = 180
@@ -57,6 +54,7 @@ class AppConfig:
             f"Node logfile:  {self.node_logfile}\n"
             f"Client Name:   {self.name}\n"
             f"Networkmagic:  {self.network_magic}\n"
+            f"Public IP:     {self.relay_public_ip}:{self.relay_public_port}\n"
             # f"..... {blocksample.block_delay} sec\n\n"
             f"----------------------------------------------------\n\n"
         )

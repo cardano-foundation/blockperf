@@ -150,13 +150,12 @@ class BlockSample:
 
     @property
     def slot_time(self) -> datetime:
-        """Time the slot_num should have happened."""
+        """Determine the time that current slot_num should have happened."""
         _network_start = network_starttime.get("mainnet", 0)
-        # print(f"_network_start {_network_start} self.slot_num {self.slot_num}")
+
         _slot_time = _network_start + self.slot_num
-        # print(f"_slot_time {_slot_time}  # unixtimestamp")
+
         slot_time = datetime.fromtimestamp(_slot_time, tz=timezone.utc)
-        # print(f"slot_time {slot_time} # real datetime ")
         return slot_time
 
     @property
@@ -274,3 +273,42 @@ class BlockSample:
         if not (fcb := self.first_completed_block):
             return ""
         return fcb.local_port
+
+    def is_sane(self) -> bool:
+        """Checks all values are within acceptable ranges.
+
+        Also checks for block_num and slot_num being not too old.
+
+        sane :: BlockSample -> Bool
+        sane BlockSample{..} = not (
+            T.length bsBpVersion > 10 ||
+            T.length bsBlockHash > 128 ||
+            T.length bsBlockHash == 0 ||
+            T.length bsHeaderRemoteAddr > 32 ||
+            T.length bsBlockRemoteAddr > 32 ||
+            bsSize == 0 ||
+            bsSize > 10_000_000 ||
+            bsHeaderDelta > 600000 ||
+            bsHeaderDelta < (-6000) ||
+            bsBlockReqDelta > 600000 ||
+            bsBlockReqDelta < (-6000) ||
+            bsBlockRspDelta > 600000||
+            bsBlockRspDelta < (-6000) ||
+            bsBlockAdoptDelta > 600000 ||
+            bsBlockAdoptDelta < (-6000) ||
+            invalidAddress bsHeaderRemoteAddr ||
+            invalidAddress bsBlockRemoteAddr
+        )
+        """
+        if (
+                0 < self.block_num
+            and 0 < self.slot_num
+            and 0 < len(self.block_hash) < 128
+            and 0 < self.block_size < 10000000
+            and -6000 < self.header_delta < 600000
+            and -6000 < self.block_request_delta < 600000
+            and -6000 < self.block_response_delta < 600000
+            and -6000 < self.block_adopt_delta < 600000
+        ):
+            return True
+        return False
