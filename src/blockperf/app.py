@@ -193,6 +193,28 @@ class App:
             ):
                 continue
 
+            # To not get published_hashes and logevents get too big over time
+            # the entries need to get removed agin. However, some hashes
+            # may not be adopted right away so we need some form of window
+            # of the last X blocks. Thats what working_hashes is supposed to provide.
+            # It should keep the last ~180 Blocks/Hashes around before deleting them
+            if len(self.working_hashes) > self.app_config.active_slot_coef * 3600:
+                removed_hash = self.working_hashes.popleft()
+                # Delete events for hash from logevents
+                if removed_hash in self.logevents:
+                    del self.logevents[removed_hash]
+                    logger.debug("Removed %s from working_hashes", removed_hash)
+                if removed_hash in self.published_hashes:
+                    del self.published_hashes[self.published_hashes.index(removed_hash)]
+                    logger.debug("Removed %s from published_hashes", removed_hash)
+
+            logger.info(
+                "LogEvents for %s blocks - Working on %s blocks, Published %s samples ",
+                len(self.logevents.keys()),
+                len(self.working_hashes),
+                len(self.published_hashes),
+            )
+
             # Discard LogEvents that are older then blockperfs startup time
             if int(event.at.timestamp()) < self.start_time:
                 continue
@@ -263,29 +285,6 @@ class App:
             logger.info("Sample for %s created", _block_hash_short)
             self.q.put(new_sample)
 
-            # To not get published_hashes and logevents get too big over time
-            # the entries need to get removed agin. However, some hashes
-            # may not be adopted right away so we need some form of window
-            # of the last X blocks. Thats what working_hashes is supposed to provide.
-            # It should keep the last ~180 Blocks/Hashes around before deleting them
-
-            if len(self.working_hashes) > self.app_config.active_slot_coef * 3600:
-                removed_hash = self.working_hashes.popleft()
-                # Delete events for hash from logevents
-                if removed_hash in self.logevents:
-                    del self.logevents[removed_hash]
-                    logger.debug("Removed %s from working_hashes", removed_hash)
-                if removed_hash in self.published_hashes:
-                    del self.published_hashes[self.published_hashes.index(removed_hash)]
-                    logger.debug("Removed %s from published_hashes", removed_hash)
-
-            logger.info(
-                "LogEvents for %s blocks - Working on %s blocks, Published %s samples ",
-                len(self.logevents.keys()),
-                len(self.working_hashes),
-                len(self.published_hashes),
-            )
-
     def get_real_node_logfile(self) -> Path:
         """Return the path to the logfile that node.log points to"""
         while True:
@@ -328,18 +327,21 @@ class App:
                 logger.info("Opened %s", real_node_log)
                 while same_file:
                     new_lines = fp.readlines()
-                    new_line = fp.readline()
-                    if not new_line:
-                        # if no new_line is returned check if the symlink changed
+                    if not new_lines:
+                        # if no new_lines are returned check if the symlink changed
                         if real_node_log.name != self.get_real_node_logfile().name:
                             logger.info("Symlink changed")
                             same_file = False
-                        time.sleep(1)
+                        else:
+                            time.sleep(0.5)
+                        # restart while
                         continue
-                    lines_read += 1
-                    event = LogEvent.from_logline(new_line)
-                    if event:
-                        yield event
+
+                    for line in new_lines:
+                        lines_read += 1
+                        event = LogEvent.from_logline(line)
+                        if event:
+                            yield event
 
                 # Currently opened logfile has change try to read all of the
                 # rest in one go!
