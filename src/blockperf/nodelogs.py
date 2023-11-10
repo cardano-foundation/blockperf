@@ -182,7 +182,7 @@ class LogEvent:
         """
         # Most stupid (simple) way to remove ip addresss given
         for addr in MASKED_ADDRESSES:
-            logline = logline.replace(addr, "x.x.x.x")
+            logline = logline.replace(addr, "0.0.0.0")
 
         try:
             json_data = json.loads(logline)

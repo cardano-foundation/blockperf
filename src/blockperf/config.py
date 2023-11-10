@@ -115,11 +115,27 @@ class AppConfig:
 
     @property
     def broker_host(self) -> str:
-        return BROKER_HOST
+        broker_host = os.getenv(
+            "BLOCKPERF_BROKER_HOST",
+            self.config_parser.get(
+                "DEFAULT",
+                "broker_host",
+                fallback=BROKER_HOST,
+            ),
+        )
+        return broker_host
 
     @property
     def broker_port(self) -> int:
-        return BROKER_PORT
+        broker_port = os.getenv(
+            "BLOCKPERF_BROKER_PORT",
+            self.config_parser.get(
+                "DEFAULT",
+                "broker_port",
+                fallback=BROKER_PORT,
+            ),
+        )
+        return int(broker_port)
 
     @property
     def broker_keepalive(self) -> int:
@@ -265,3 +281,7 @@ class AppConfig:
             )
         )
         return node_service_unit
+
+    @property
+    def max_concurrent_blocks(self):
+        return self.active_slot_coef * 3600
