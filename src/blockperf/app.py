@@ -211,24 +211,9 @@ class App:
         """
 
         for event in self.logevents_logfile():
-            if event.kind not in (
-                LogEventKind.TRACE_DOWNLOADED_HEADER,
-                LogEventKind.SEND_FETCH_REQUEST,
-                LogEventKind.COMPLETED_BLOCK_FETCH,
-                LogEventKind.ADDED_TO_CURRENT_CHAIN,
-                LogEventKind.SWITCHED_TO_A_FORK,
-            ):
-                continue
-
+            # Make sure lists dont fill up
             self.ensure_maxblocks()
 
-            # Discard LogEvents that are older then blockperfs startup time
-            if int(event.at.timestamp()) < self.start_time:
-                continue
-
-            # Ensure we dont work with events that do not have a hash
-            if not event.block_hash:
-                logger.debug("Event %s has no hash", event)
             _block_hash = event.block_hash
             _block_hash_short = event.block_hash_short
 
@@ -331,36 +316,39 @@ class App:
         while True:
             real_node_log = self.get_real_node_logfile()
             lines_read = 0
-            same_file = True
             with open(real_node_log, "r", 1, "utf-8") as fp:
                 # Avoid reading through old node.log on fresh start
                 if first_loop:
                     fp.seek(0, 2)
                     first_loop = False
                 logger.info("Opened %s", real_node_log)
-                while same_file:
+                while True:
                     new_lines = fp.readlines()
-                    if not new_lines:
-                        # if no new_lines are returned check if the symlink changed
-                        if real_node_log.name != self.get_real_node_logfile().name:
-                            logger.info("Symlink changed")
-                            same_file = False
-                        else:
-                            time.sleep(0.5)
-                        # restart while
-                        continue
-
+                    # For every line try to create a LogEvent.
+                    # yield only if there is an event, of a certain kind,
+                    # that is not too old and has a hash
                     for line in new_lines:
                         lines_read += 1
                         event = LogEvent.from_logline(line)
-                        if event:
+                        if event and (
+                            event.kind in (
+                                LogEventKind.TRACE_DOWNLOADED_HEADER,
+                                LogEventKind.SEND_FETCH_REQUEST,
+                                LogEventKind.COMPLETED_BLOCK_FETCH,
+                                LogEventKind.ADDED_TO_CURRENT_CHAIN,
+                                LogEventKind.SWITCHED_TO_A_FORK,
+                            )
+                            and int(event.at.timestamp()) >= self.start_time
+                            and event.block_hash
+                        ):
                             yield event
 
-                # Currently opened logfile has change try to read all of the
-                # rest in one go!
-                # logger.debug("Reading the rest of it ... !!! ")
-                # for line in fp.readlines():
-                #    event = LogEvent.from_logline(line)
-                #    if event:
-                #        yield event
+                    # If no new_lines are returned check if the symlink changed
+                    # If it did not change, wait and retry readlines()
+                    # If it did change, return to outer while and restart
+                    if not new_lines and (real_node_log.name != self.get_real_node_logfile().name):
+                        logger.info("Symlink changed")
+                        break
+                    time.sleep(0.5)
+
                 logger.info("Read %s lines from %s ", lines_read, real_node_log)
