@@ -277,7 +277,7 @@ class App:
             logger.info("Sample for %s created", _block_hash_short)
             self.q.put(new_sample)
             self.published_blocks.append(_block_hash)
-            logger.debug(
+            logger.info(
                 "LogEvents for %s blocks - Working on %s blocks, Published %s samples ",
                 len(self.logevents.keys()),
                 len(self.working_hashes),
@@ -302,6 +302,32 @@ class App:
                 logger.warning("Real node log not found from link %s", node_log_link)
                 time.sleep(2)
 
+    def slot_is_too_old(self, logevents: list) -> bool:
+        """Given a list of logevents it finds the TraceDownloadedHeader event
+        and determines whether the current slot_num is too old for us.
+        """
+        trace_headers = [
+            event
+            for event in logevents
+            if event.kind == LogEventKind.TRACE_DOWNLOADED_HEADER
+        ]
+
+        # Without TraceHeaders we cant even calcualte the slot_time
+        if not trace_headers:
+            return False
+
+        # If there is one, check its slot_time
+        trace_header = trace_headers.pop(0)
+        slot_time = slot_time_of(trace_header.slot_num)
+        if slot_time < datetime.now(tz=timezone.utc) - timedelta(hours=12):
+            logger.info(
+                "Slot %s is too old (%s)",
+                trace_header.slot_num,
+                slot_time,
+            )
+            return True
+        return False
+
     def logevents_logfile(self):
         """Generator that "tails" the nodes log file and produces LogEvents
         for each new line. The nodes logfile is actually a symlink and just
@@ -318,52 +344,33 @@ class App:
             real_node_log = self.get_real_node_logfile()
             lines_read = 0
             with open(real_node_log, "r", 1, "utf-8") as fp:
+                logger.info("Opened %s", real_node_log)
                 # Avoid reading through old node.log on fresh start
                 if seek_file:
+                    logger.debug("Seek to end of file")
                     fp.seek(0, 2)
                     seek_file = False
-                logger.info("Opened %s", real_node_log)
                 while True:
                     new_lines = fp.readlines()
-                    for line in new_lines:
-                        lines_read += 1
-                        event = LogEvent.from_logline(line)
-                        if (
-                            not event
-                            or event.kind
-                            not in (
-                                LogEventKind.TRACE_DOWNLOADED_HEADER,
-                                LogEventKind.SEND_FETCH_REQUEST,
-                                LogEventKind.COMPLETED_BLOCK_FETCH,
-                                LogEventKind.ADDED_TO_CURRENT_CHAIN,
-                                LogEventKind.SWITCHED_TO_A_FORK,
-                            )
-                            or int(event.at.timestamp()) < self.start_time
-                            or not event.block_hash
-                        ):
-                            # Discard event if json invalid, is of wrong kind
-                            # is older then the start time of blockperf
-                            # or does not have a hash
-                            continue
+                    # Create logevents from lines
+                    logevents = map(
+                        lambda line: LogEvent.from_logline(line, self.start_time),
+                        new_lines,
+                    )
+                    # Filter out None's
+                    logevents = [event for event in logevents if event is not None]
 
-                        # If a node is syncing from scratch, its producing alot of logevents
-                        # To not overwhelm the system with blockperf constantly trying to
-                        # parse these, the following tries to determine if the node
-                        # is catching up. Basicallyif the slot_num is older then 12h
-                        # the node is considered to be catching up and thus the scripts
-                        # waits until it restarts again.
-                        if event.kind == LogEventKind.TRACE_DOWNLOADED_HEADER:
-                            slot_time = slot_time_of(event.slot_num)
-                            if slot_time < datetime.now(tz=timezone.utc) - timedelta(
-                                hours=12
-                            ):
-                                logger.info(
-                                    "Slot %s is too old (%s)", event.slot_num, slot_time
-                                )
-                                time.sleep(100)
-                                seek_file = True
-                                break
-                        yield event
+                    # Check if the current slot is too old. If it is, sleep
+                    # a moment and start over. This is important for when the node
+                    # is syncing from scratch and producing alot of old logevents
+                    if self.slot_is_too_old(logevents):
+                        time.sleep(100)
+                        seek_file = True
+                        break
+
+                    # Yield all events
+                    logger.debug(f"Found {len(logevents)} logevents")
+                    yield from logevents
 
                     # If no new_lines are returned check if the symlink changed
                     # If it did not change, wait and retry readlines()
@@ -374,5 +381,3 @@ class App:
                         logger.info("Symlink changed")
                         break
                     time.sleep(0.5)
-
-                logger.info("Read %s lines from %s ", lines_read, real_node_log)

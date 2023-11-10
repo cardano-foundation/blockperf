@@ -173,24 +173,40 @@ class LogEvent:
         return _repr
 
     @classmethod
-    def from_logline(cls, logline: str) -> Union["LogEvent", None]:
+    def from_logline(cls, logline: str, bad_before: int) -> Union["LogEvent", None]:
         """Takes a single line from the logs and creates a LogEvent.
-        But will return None if the event is
-            * could not be turned into json
-            * is too old
-            * Is not of one of the specific kinds
+        Will return None if the LogEvent could not be created due to various reason.
+        Either because the json is invalid, the LogKind is not of interest,
+        the event is tool old or it does not have a block_hash.
         """
         # Most stupid (simple) way to remove ip addresss given
         for addr in MASKED_ADDRESSES:
             logline = logline.replace(addr, "0.0.0.0")
 
+        _event = None
         try:
             json_data = json.loads(logline)
             _event = cls(json_data)
-            return _event
         except json.decoder.JSONDecodeError:
             logger.error("Invalid JSON %s", logline)
             return None
+
+        if _event.kind not in (
+            LogEventKind.TRACE_DOWNLOADED_HEADER,
+            LogEventKind.SEND_FETCH_REQUEST,
+            LogEventKind.COMPLETED_BLOCK_FETCH,
+            LogEventKind.ADDED_TO_CURRENT_CHAIN,
+            LogEventKind.SWITCHED_TO_A_FORK,
+        ):
+            return None
+
+        if _event.at.timestamp() < bad_before:
+            return None
+
+        if not _event.block_hash:
+            return None
+
+        return _event
 
     @property
     def block_hash(self) -> str:
