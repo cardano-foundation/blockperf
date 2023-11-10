@@ -40,7 +40,14 @@ The default configuration files from https://book.world.dev.cardano.org/environm
 
 ## Installaing blockperf
 
-To install blockperf
+To install blockperf you need to clone it from the github repository. I recommend
+you use a virtualenv. The topic of virtual environments in python can be daunting
+if you are new to it. The way i would reccomend is the most simple way of creating
+virtual environments by using the builtin venv module (examples see below)
+<https://docs.python.org/3/library/venv.html>. This creates lightweight python
+environments with their own installation path so you dont need to install things
+in your system python environmnet. However, the way you install blockperf is
+up to you, its just a python package after all.
 
 ```bash
 # Create the folder you want blockperf to live in

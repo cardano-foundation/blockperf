@@ -276,6 +276,7 @@ class App:
 
             logger.info("Sample for %s created", _block_hash_short)
             self.q.put(new_sample)
+            self.published_blocks.append(_block_hash)
             logger.debug(
                 "LogEvents for %s blocks - Working on %s blocks, Published %s samples ",
                 len(self.logevents.keys()),
