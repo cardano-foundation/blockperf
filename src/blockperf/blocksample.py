@@ -6,19 +6,32 @@ from datetime import datetime, timezone
 import logging
 
 from blockperf import __version__ as blockperf_version
+
 # from blockperf.config import AppConfig
 from blockperf.nodelogs import LogEventKind, LogEvent
+
 # logging.basicConfig(level=logging.DEBUG, format="(%(threadName)-9s) %(message)s")
 logger = logging.getLogger(__name__)
 
 
-# Unixtimestamps of the starttimes of different networks. Needed to determine
-# when a given slot is meant to exist in time.
-network_starttime = {
-    "preprod": 1660003200,
+NETWORK_STARTTIMES = {
     "mainnet": 1591566291,
     "preview": 1655683200,
+    "preprod": 1660003200,
 }
+
+
+def slot_time_of(slot_num: int, network: str = "mainnet") -> datetime:
+    """Calculate the timestamp that given slot should have occured.
+    Works only if the networks slots are 1 second lenghts!
+    """
+    if network not in NETWORK_STARTTIMES:
+        raise ValueError(f"No starttime for {network} available")
+
+    _network_start = NETWORK_STARTTIMES.get(network, 0)
+    _slot_time = _network_start + slot_num
+    slot_time = datetime.fromtimestamp(_slot_time, tz=timezone.utc)
+    return slot_time
 
 
 class BlockSample:
@@ -122,13 +135,12 @@ class BlockSample:
                 return event
         return None
 
-    @property
-    def slot_num_delta(self) -> int:
-        """Slot delta in miliseconds
-
-        The time difference in miliseconds
-        """
-        return 0  # self.slot_num #- self.last_slot_num
+    # @property
+    # def slot_num_delta(self) -> int:
+    #    """Slot delta in miliseconds
+    #    The time difference in miliseconds
+    #    """
+    #    return 0  # self.slot_num #- self.last_slot_num
 
     @property
     def header_remote_addr(self) -> str:
@@ -151,12 +163,8 @@ class BlockSample:
     @property
     def slot_time(self) -> datetime:
         """Determine the time that current slot_num should have happened."""
-        _network_start = network_starttime.get("mainnet", 0)
-
-        _slot_time = _network_start + self.slot_num
-
-        slot_time = datetime.fromtimestamp(_slot_time, tz=timezone.utc)
-        return slot_time
+        _slot_time = slot_time_of(self.slot_num)
+        return _slot_time
 
     @property
     def header_delta(self) -> int:
@@ -301,7 +309,7 @@ class BlockSample:
         )
         """
         if (
-                0 < self.block_num
+            0 < self.block_num
             and 0 < self.slot_num
             and 0 < len(self.block_hash) < 128
             and 0 < self.block_size < 10000000

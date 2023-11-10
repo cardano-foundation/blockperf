@@ -1,6 +1,6 @@
 import sys
 import collections
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 import json
 import logging
 import queue
@@ -8,11 +8,11 @@ import os
 import threading
 import time
 from pathlib import Path
-from datetime import datetime
+
 from blockperf import __version__ as blockperf_version
 from blockperf.config import AppConfig
 
-from blockperf.blocksample import BlockSample
+from blockperf.blocksample import BlockSample, slot_time_of
 from blockperf.nodelogs import LogEventKind, LogEvent
 from blockperf.mqtt import MQTTClient
 
@@ -312,41 +312,64 @@ class App:
         it has a new target. If so the new logfile is opened and again read
         line by line producing LogEvent instances.
         """
-        first_loop = True
+        seek_file = True
         while True:
             real_node_log = self.get_real_node_logfile()
             lines_read = 0
             with open(real_node_log, "r", 1, "utf-8") as fp:
                 # Avoid reading through old node.log on fresh start
-                if first_loop:
+                if seek_file:
                     fp.seek(0, 2)
-                    first_loop = False
+                    seek_file = False
                 logger.info("Opened %s", real_node_log)
                 while True:
                     new_lines = fp.readlines()
-                    # For every line try to create a LogEvent.
-                    # yield only if there is an event, of a certain kind,
-                    # that is not too old and has a hash
                     for line in new_lines:
                         lines_read += 1
                         event = LogEvent.from_logline(line)
-                        if event and (
-                            event.kind in (
+                        if (
+                            not event
+                            or event.kind
+                            not in (
                                 LogEventKind.TRACE_DOWNLOADED_HEADER,
                                 LogEventKind.SEND_FETCH_REQUEST,
                                 LogEventKind.COMPLETED_BLOCK_FETCH,
                                 LogEventKind.ADDED_TO_CURRENT_CHAIN,
                                 LogEventKind.SWITCHED_TO_A_FORK,
                             )
-                            and int(event.at.timestamp()) >= self.start_time
-                            and event.block_hash
+                            or int(event.at.timestamp()) < self.start_time
+                            or not event.block_hash
                         ):
-                            yield event
+                            # Discard event if json invalid, is of wrong kind
+                            # is older then the start time of blockperf
+                            # or does not have a hash
+                            continue
+
+                        # If a node is syncing from scratch, its producing alot of logevents
+                        # To not overwhelm the system with blockperf constantly trying to
+                        # parse these, the following tries to determine if the node
+                        # is catching up. Basicallyif the slot_num is older then 12h
+                        # the node is considered to be catching up and thus the scripts
+                        # waits until it restarts again.
+                        if event.kind == LogEventKind.TRACE_DOWNLOADED_HEADER:
+                            slot_time = slot_time_of(event.slot_num)
+                            if slot_time < datetime.now(tz=timezone.utc) - timedelta(
+                                hours=12
+                            ):
+                                logger.info(
+                                    "Slot %s is too old (%s)", event.slot_num, slot_time
+                                )
+                                time.sleep(100)
+                                seek_file = True
+                                break
+                        yield event
 
                     # If no new_lines are returned check if the symlink changed
                     # If it did not change, wait and retry readlines()
                     # If it did change, return to outer while and restart
-                    if not new_lines and (real_node_log.name != self.get_real_node_logfile().name):
+                    if not new_lines and (
+                        real_node_log.name != self.get_real_node_logfile().name
+                    ):
                         logger.info("Symlink changed")
                         break
                     time.sleep(0.5)
