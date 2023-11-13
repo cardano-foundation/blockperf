@@ -21,15 +21,17 @@ logger = logging.getLogger(__name__)
 
 
 class App:
-    q: queue.Queue
     app_config: AppConfig
     node_config: dict
     mqtt_client: MQTTClient
     start_time: int
 
-    logevents = {}  # holds a list of events for each block_hash
-    published_blocks = []  # the list of all published hashes
-    working_hashes = collections.deque()  # Stores the last X hashes before
+    # holds a dictionairy for each kind of events for each block_hash
+    logevents = {}
+    # the list of all published hashes, to not publish a hash twice
+    published_blocks = []
+    # Stores the last X hashes before they are deleted from logevents and published_blocks
+    working_hashes = collections.deque()
 
     def __init__(self, config: AppConfig) -> None:
         self.q = queue.Queue(maxsize=50)
@@ -58,12 +60,7 @@ class App:
                 logger.debug("Waiting for mqtt connection ... ")
                 time.sleep(0.5)  # Wait until connected to broker
 
-            consumer_thread = threading.Thread(
-                target=self.blocksample_consumer, args=(), daemon=True
-            )
-            consumer_thread.start()
-
-            self.blocksample_producer()
+            self.run_blocksample_loop()
         except KeyboardInterrupt:
             sys.stdout.write("Closed")
             return
@@ -126,25 +123,6 @@ class App:
         }
         return payload
 
-    def blocksample_consumer(self):
-        """Consumer thread publishes each sample the consumer puts into the queue"""
-
-        while True:
-            logger.debug(
-                "Waiting for next item in queue, Current size: %s", self.q.qsize()
-            )
-            blocksample = self.q.get()
-            self.print_block_stats(blocksample)
-
-            payload = self.mqtt_payload_from(blocksample)
-            logger.debug(
-                json.dumps(payload, indent=4, sort_keys=True, ensure_ascii=False)
-            )
-
-            # new
-            topic = f"{self.app_config.topic}/{blocksample.block_hash}"
-            self.mqtt_client.publish(topic, payload)
-
     def ensure_maxblocks(self):
         """
         * logevents holds all events recorded for all hashes seen.
@@ -171,12 +149,11 @@ class App:
                 del self.published_blocks[self.published_blocks.index(removed_hash)]
                 logger.debug("Removed %s from published_blocks", removed_hash)
 
-    def blocksample_producer(self):
-        """Producer thread that reads the logfile and puts blocksamples into the queue.
+    def run_blocksample_loop(self):
+        """Create samples for the blocks seen in the logfile and publishes them.
 
         The for loop is supposed to run forever over the events from the logfile
-        produced by logevents_logfile(). The nodelogs.LogEvents class implements
-        these events.
+        produced by logevents_logfile(). Each event is a nodelogs.LogEvent.
 
         From all the events that are possibly read from the logfile only
         some are of interest.
@@ -186,28 +163,22 @@ class App:
                 ADDED_TO_CURRENT_CHAIN, SWITCHED_TO_A_FORK
             * Must not be too old (invalid)
             * Must have a blockhash
+        These are already filtered out in logevents_logfile()
 
-        Once a block has been adopted to the local chain, a sample from that
-        block is created and send to the broker.To be able to produce a sample
-        for a given block all its events are inspected and the data is fetched.
-        However, not all blocks end up being adopted and the events may be
-        written to the logfile in an arbitrary order.
+        A sample can only be created if all the required LogEvents have been
+        recorded for that given block. All required LogEvents means that
+        for each hash there must at least be one TRACE_DOWNLOADED_HEADER, one SEND_FETCH_REQUEST
+        and one COMPLETED_BLOCK_FETCH as well es one of the two possible adoption
+        kinds which are ADDED_TO_CURRENT_CHAIN and SWITCHED_TO_A_FORK.
 
-        The self.logevents dictionary holds subdictionaries for all kinds of
-        events (only the kinds that have not been filtered out yet). That way
-        its easy to check whether or not all events to create a sample are
-        recorded yet or not.
+        To make that test somewhat simple there self.logevents holds all events
+        in dictionaries for their respective types. That makes it rather simple
+        to test if all required LogEvents have been collected yet.
 
         Once that is the case a new sample is created by collecting all events
-        and instanciating BlockSample(). If the sample is complete it is put
-        into the queue to be picked up by the other thread and sent to the broker.
+        and instanciating BlockSample(). If the sample is complete it published.
 
-        The recorded block events need to be delete at some point again. But
-        they should not be deleted directly after the blocksample has been
-        published. Therfore a deque is created that holds the hashs' of the
-        last X published blocks. X is calculated based on the activeSlotCoef
-        from the shelley config and the assumption to hold "the last hour" worth
-        of blocks. Which currently is 180.
+        The
         """
 
         for event in self.logevents_logfile():
@@ -275,7 +246,17 @@ class App:
                 continue
 
             logger.info("Sample for %s created", _block_hash_short)
-            self.q.put(new_sample)
+
+            # The sample is ready to be published, create the payload for mqtt,
+            # determine the topic and publish that sample
+            self.print_block_stats(new_sample)
+            payload = self.mqtt_payload_from(new_sample)
+            logger.debug(
+                json.dumps(payload, indent=4, sort_keys=True, ensure_ascii=False)
+            )
+            topic = f"{self.app_config.topic}/{new_sample.block_hash}"
+            self.mqtt_client.publish(topic, payload)
+
             self.published_blocks.append(_block_hash)
             logger.info(
                 "LogEvents for %s blocks - Working on %s blocks, Published %s samples ",
