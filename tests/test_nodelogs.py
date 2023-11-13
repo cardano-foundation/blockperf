@@ -1,5 +1,6 @@
-from blockperf.logger import LogEventKind
-from blockperf.logger import LogEvent
+import pytest
+from blockperf.nodelogs import LogEventKind
+from blockperf.nodelogs import LogEvent
 
 
 loglines = """
@@ -80,32 +81,66 @@ loglines = """
 {"app":[],"at":"2023-09-01T14:14:25.10Z","data":{"block":"fa927c7195b1ffbd5a231cf7bbb8f34af0ed77d0d089a892f5f8ffa79a3c090b","delay":1.105331477,"kind":"CompletedBlockFetch","peer":{"local":{"addr":"192.168.0.137","port":"3001"},"remote":{"addr":"18.138.253.119","port":"1338"}},"size":89587},"env":"8.1.1:ea2c0","host":"mainnetf","loc":null,"msg":"","ns":["cardano.node.BlockFetchClient"],"pid":"1662080","sev":"Info","thread":"20685"}
 """
 
-def test_from_logline():
-    new_line = """{"app":[],"at":"2023-09-01T14:14:24.58Z","data":{"block":"dda846c34c0f219c26ded0994ef0beace1dea54487d60e0b4afe5f6f4fe3d246","blockNo":9233842,"kind":"ChainSyncClientEvent.TraceDownloadedHeader","peer":{"local":{"addr":"192.168.0.137","port":"3001"},"remote":{"addr":"3.216.77.109","port":"3001"}},"slot":102011373},"env":"8.1.1:ea2c0","host":"mainnetf","loc":null,"msg":"","ns":["cardano.node.ChainSyncClient"],"pid":"1662080","sev":"Info","thread":"19982"}"""
-    event = LogEvent.from_logline(new_line)
-    assert event
-    assert event.kind == LogEventKind.TRACE_DOWNLOADED_HEADER
-    assert event.block_hash == "dda846c34c0f219c26ded0994ef0beace1dea54487d60e0b4afe5f6f4fe3d246"
-    assert event.block_hash_short == "dda846c34c"
 
-def test_from_logline_address_masking():
-    new_line = """{"app":[],"at":"2023-09-01T14:14:24.56Z","data":{"block":"dda846c34c0f219c26ded0994ef0beace1dea54487d60e0b4afe5f6f4fe3d246","blockNo":9233842,"kind":"ChainSyncClientEvent.TraceDownloadedHeader","peer":{"local":{"addr":"192.168.0.137","port":"3001"},"remote":{"addr":"66.45.255.78","port":"6000"}},"slot":102011373},"env":"8.1.1:ea2c0","host":"mainnetf","loc":null,"msg":"","ns":["cardano.node.ChainSyncClient"],"pid":"1662080","sev":"Info","thread":"19113"}"""
-    event = LogEvent.from_logline(new_line, masked_addresses=list())
-    assert event
-    assert event.remote_addr == "66.45.255.78" # No substituion should have taken place
-    masked_addresses = ["66.45.255.78", "55.4.152.87"]
-    event = LogEvent.from_logline(new_line, masked_addresses=masked_addresses)
-    assert event
-    assert event.remote_addr == "x.x.x.x" # IP Address should be masked
+@pytest.fixture
+def empty_logevent():
+    return LogEvent({})
 
-def test_block_hash():
+
+@pytest.fixture
+def invalid_json():
+    return "{"
+
+
+@pytest.fixture
+def trace_header_line():
+    return """{"app":[],"at":"2023-09-01T14:14:24.58Z","data":{"block":"dda846c34c0f219c26ded0994ef0beace1dea54487d60e0b4afe5f6f4fe3d246","blockNo":9233842,"kind":"ChainSyncClientEvent.TraceDownloadedHeader","peer":{"local":{"addr":"192.168.0.137","port":"3001"},"remote":{"addr":"3.216.77.109","port":"3001"}},"slot":102011373},"env":"8.1.1:ea2c0","host":"mainnetf","loc":null,"msg":"","ns":["cardano.node.ChainSyncClient"],"pid":"1662080","sev":"Info","thread":"19982"}"""
+
+
+class TestFromLogline:
+    def test_from_logline(self, trace_header_line):
+        event = LogEvent.from_logline(trace_header_line)
+        assert event
+        assert event.kind == LogEventKind.TRACE_DOWNLOADED_HEADER
+        assert (
+            event.block_hash
+            == "dda846c34c0f219c26ded0994ef0beace1dea54487d60e0b4afe5f6f4fe3d246"
+        )
+        assert event.block_hash_short == "dda846c34c"
+
+    def test_ivnalid_json(self, invalid_json):
+        event = LogEvent.from_logline(invalid_json)
+        assert not event
+
+    def test_from_logline_address_masking(self):
+        new_line = """{"app":[],"at":"2023-09-01T14:14:24.56Z","data":{"block":"dda846c34c0f219c26ded0994ef0beace1dea54487d60e0b4afe5f6f4fe3d246","blockNo":9233842,"kind":"ChainSyncClientEvent.TraceDownloadedHeader","peer":{"local":{"addr":"192.168.0.137","port":"3001"},"remote":{"addr":"66.45.255.78","port":"6000"}},"slot":102011373},"env":"8.1.1:ea2c0","host":"mainnetf","loc":null,"msg":"","ns":["cardano.node.ChainSyncClient"],"pid":"1662080","sev":"Info","thread":"19113"}"""
+
+        event = LogEvent.from_logline(new_line, [])
+        assert event
+        assert (
+            event.remote_addr == "66.45.255.78"
+        )  # No substituion should have taken place
+        masked_addresses = ["66.45.255.78", "55.4.152.87"]
+        event = LogEvent.from_logline(new_line, masked_addresses)
+        assert event
+        assert event.remote_addr == "0.0.0.0"  # IP Address should be masked
+
+
+def test_invalid_kind():
     new_line = """{"app":[],"at":"2023-09-01T14:14:25.10Z","data":{"kind":"ChainSyncClientEvent.TraceRolledBack","peer":{"local":{"addr":"192.168.0.137","port":"3001"},"remote":{"addr":"209.250.239.195","port":"6000"}},"tip":{"headerHash":"ae06d3a31a7dbb3af577ed0271723fc24cd17ef6e3e9be58b7631b1ac3ebc1e0","kind":"BlockPoint","slot":102011319}},"env":"8.1.1:ea2c0","host":"mainnetf","loc":null,"msg":"","ns":["cardano.node.ChainSyncClient"],"pid":"1662080","sev":"Notice","thread":"9497"}"""
     event = LogEvent.from_logline(new_line)
-    assert event
-    assert event.block_hash == ""
+    assert not event
+
+
+def test_block_hash(empty_logevent):
+    assert empty_logevent.block_hash == ""
+
     new_line = """{"app":[],"at":"2023-09-01T14:14:24.83Z","data":{"block":"dda846c34c0f219c26ded0994ef0beace1dea54487d60e0b4afe5f6f4fe3d246","delay":0.832114369,"kind":"CompletedBlockFetch","peer":{"local":{"addr":"192.168.0.137","port":"3001"},"remote":{"addr":"3.215.7.178","port":"3001"}},"size":89587},"env":"8.1.1:ea2c0","host":"mainnetf","loc":null,"msg":"","ns":["cardano.node.BlockFetchClient"],"pid":"1662080","sev":"Info","thread":"484"}"""
     event = LogEvent.from_logline(new_line)
     assert event
-    assert event.block_hash == "dda846c34c0f219c26ded0994ef0beace1dea54487d60e0b4afe5f6f4fe3d246"
-    assert event.block_hash_short == "dda846c34c"
+    assert (
+        event.block_hash
+        == "dda846c34c0f219c26ded0994ef0beace1dea54487d60e0b4afe5f6f4fe3d246"
+    )
 
+    assert event.block_hash_short == "dda846c34c"

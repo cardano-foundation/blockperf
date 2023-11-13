@@ -135,13 +135,6 @@ class BlockSample:
                 return event
         return None
 
-    # @property
-    # def slot_num_delta(self) -> int:
-    #    """Slot delta in miliseconds
-    #    The time difference in miliseconds
-    #    """
-    #    return 0  # self.slot_num #- self.last_slot_num
-
     @property
     def header_remote_addr(self) -> str:
         if not (fth := self.first_trace_header):

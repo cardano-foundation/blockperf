@@ -8,10 +8,6 @@ from typing import Union
 from datetime import datetime, timezone, timedelta
 import logging
 
-from blockperf import __version__ as blockperf_version
-from blockperf.config import AppConfig, MASKED_ADDRESSES
-
-# logging.basicConfig(level=logging.DEBUG, format="(%(threadName)-9s) %(message)s")
 logger = logging.getLogger(__name__)
 
 
@@ -134,10 +130,12 @@ class LogEvent:
         """Create a LogEvent with `from_logline` method by passing in the json string
         as written to the nodes log."""
 
-        self.at = datetime.strptime(
-            event_data.get("at", None), "%Y-%m-%dT%H:%M:%S.%f%z"
-        )
-        self.atstr = self.at.strftime("%Y-%m-%d %H:%M:%S,%f")[:-3]
+        if _at := event_data.get("at", None):
+            self.at = datetime.strptime(_at, "%Y-%m-%dT%H:%M:%S.%f%z")
+
+        if hasattr(self, "at"):
+            self.atstr = self.at.strftime("%Y-%m-%d %H:%M:%S,%f")[:-3]
+
         self.data = event_data.get("data", {})
         if not self.data:
             logger.error("%s has not data", self)
@@ -173,15 +171,21 @@ class LogEvent:
         return _repr
 
     @classmethod
-    def from_logline(cls, logline: str, bad_before: int) -> Union["LogEvent", None]:
+    def from_logline(
+        cls,
+        logline: str,
+        masked_addresses: list = [],
+        bad_before: Union[int, None] = None,
+    ) -> Union["LogEvent", None]:
         """Takes a single line from the logs and creates a LogEvent.
         Will return None if the LogEvent could not be created due to various reason.
         Either because the json is invalid, the LogKind is not of interest,
         the event is tool old or it does not have a block_hash.
         """
         # Most stupid (simple) way to remove ip addresss given
-        for addr in MASKED_ADDRESSES:
-            logline = logline.replace(addr, "0.0.0.0")
+        if masked_addresses:
+            for addr in masked_addresses:
+                logline = logline.replace(addr, "0.0.0.0")
 
         _event = None
         try:
@@ -200,7 +204,7 @@ class LogEvent:
         ):
             return None
 
-        if _event.at.timestamp() < bad_before:
+        if bad_before and _event.at.timestamp() < bad_before:
             return None
 
         if not _event.block_hash:

@@ -17,29 +17,18 @@ logger = logging.getLogger(__name__)
 class ConfigError(Exception):
     pass
 
+
 BROKER_HOST = "a12j2zhynbsgdv-ats.iot.eu-central-1.amazonaws.com"
 BROKER_PORT = 8883
 BROKER_KEEPALIVE = 180
 ROOTDIR = Path(__file__).parent
-
-MASKED_ADDRESSES: list = []
-if _masked_addresses := os.getenv("BLOCKPERF_MASKED_ADDRESSES", ""):
-    _validated_addresses = []
-    # String split and return list
-    for addr in _masked_addresses.split(","):
-        try:
-            ipaddress.ip_address(addr)
-            _validated_addresses.append(addr)
-        except ValueError as exc:
-            raise ConfigError(
-                f"Given address {addr} is not a valid ip address") from exc
-    MASKED_ADDRESSES = _validated_addresses
 
 
 class AppConfig:
     """App Configuration class provides a common interface to access all kinds
     of configuration values.
     """
+
     config_parser: ConfigParser
 
     def __init__(self, config_file: Union[Path, None] = None, verbose=False):
@@ -62,12 +51,13 @@ class AppConfig:
 
     def check_blockperf_config(self):
         """Try to check whether or not everything that is fundamentally needed
-            is actually configured, by asking for its value and triggering
-            the implemented failer if not found.
+        is actually configured, by asking for its value and triggering
+        the implemented failer if not found.
         """
         if not self.node_config_file or not self.node_config_file.exists():
-            logger.error("Node config '%s' config does not exist",
-                         self.node_config_file)
+            logger.error(
+                "Node config '%s' config does not exist", self.node_config_file
+            )
             sys.exit()
 
         if not self.node_logfile or not self.node_logfile.exists():
@@ -76,8 +66,7 @@ class AppConfig:
 
         # logdir is taken from the .parent of node_logfile
         if not self.node_logdir or not self.node_logdir.exists():
-            logger.error("Node logdir '%s' does not exist",
-                         self.node_logdir)
+            logger.error("Node logdir '%s' does not exist", self.node_logdir)
             sys.exit()
 
         if not self.name:
@@ -106,12 +95,15 @@ class AppConfig:
 
         # Check for needed config values
         assert self.node_config.get(
-            "TraceChainSyncClient", False), "TraceChainSyncClient not enabled"
+            "TraceChainSyncClient", False
+        ), "TraceChainSyncClient not enabled"
         assert self.node_config.get(
-            "TraceBlockFetchClient", False), "TraceBlockFetchClient not enabled"
+            "TraceBlockFetchClient", False
+        ), "TraceBlockFetchClient not enabled"
         # What are the other possible values? This should allow everything that is above Normal
-        assert self.node_config.get(
-            "TracingVerbosity", "") == "NormalVerbosity", "TracingVerbosity not enabled"
+        assert (
+            self.node_config.get("TracingVerbosity", "") == "NormalVerbosity"
+        ), "TracingVerbosity not enabled"
 
     @property
     def broker_host(self) -> str:
@@ -201,16 +193,14 @@ class AppConfig:
 
     @property
     def active_slot_coef(self) -> float:
-        active_slot_coef = self._shelley_genesis_data.get(
-            "activeSlotsCoeff", 0.0)
+        active_slot_coef = self._shelley_genesis_data.get("activeSlotsCoeff", 0.0)
         return float(active_slot_coef)
 
     @property
     def relay_public_ip(self) -> str:
         relay_public_ip = os.getenv(
             "BLOCKPERF_RELAY_PUBLIC_IP",
-            self.config_parser.get(
-                "DEFAULT", "relay_public_ip", fallback=""),
+            self.config_parser.get("DEFAULT", "relay_public_ip", fallback=""),
         )
         return relay_public_ip
 
@@ -219,8 +209,7 @@ class AppConfig:
         relay_public_port = int(
             os.getenv(
                 "BLOCKPERF_RELAY_PUBLIC_PORT",
-                self.config_parser.get(
-                    "DEFAULT", "relay_public_port", fallback=3001),
+                self.config_parser.get("DEFAULT", "relay_public_port", fallback=3001),
             )
         )
         return relay_public_port
@@ -278,10 +267,47 @@ class AppConfig:
                 "DEFAULT",
                 "node_service_unit",
                 fallback="cardano-node.service",
-            )
+            ),
         )
         return node_service_unit
 
     @property
-    def max_concurrent_blocks(self):
-        return self.active_slot_coef * 3600
+    def max_concurrent_blocks(self) -> int:
+        return int(self.active_slot_coef) * 3600
+
+    @property
+    def sample_logdir() -> Union[Path, None]:
+        _sample_logdir := os.getenv("BLOCKPERF_SAMPLE_LOGDIR", self.config_parser.get(
+            "DEFAULT",
+            "sample_logdir",
+            fallback=None,
+        ))
+
+        if not _sample_logdir:
+            return None
+
+        _sample_logdir_path = Path(_sample_logdir)
+        if not _sample_logdir_path.exists():
+            return None
+
+        return _sample_logdir_path
+
+
+    @property
+    def masked_addresses(self) -> list:
+        _masked_addresses = os.getenv("BLOCKPERF_MASKED_ADDRESSES", None)
+        if not _masked_addresses:
+            return []
+
+        validated_addresses = []
+        # String split and return list
+        for addr in _masked_addresses.split(","):
+            try:
+                _addr = addr.strip()
+                ipaddress.ip_address(_addr)
+                validated_addresses.append(_addr)
+            except ValueError as exc:
+                raise ConfigError(
+                    f"Given address {addr} is not a valid ip address"
+                ) from exc
+        return validated_addresses

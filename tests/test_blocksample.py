@@ -1,13 +1,17 @@
-
-import os
 import pytest
 from datetime import datetime
 from blockperf.config import AppConfig, ConfigError
 from blockperf.blocksample import BlockSample
-from blockperf.logger import LogEventKind, LogEvent
+from blockperf.nodelogs import LogEventKind, LogEvent
+from blockperf.blocksample import slot_time_of
 
-sample01 =  BlockSample([
-    LogEvent.from_logline("""{"app":[],"at":"2023-09-01T14:14:24.55Z",
+
+@pytest.fixture
+def sample01():
+    return BlockSample(
+        [
+            LogEvent.from_logline(
+                """{"app":[],"at":"2023-09-01T14:14:24.55Z",
                         "data":{
                             "deltaq":{"G":2.472594034e-2},
                             "head":"dda846c34c0f219c26ded0994ef0beace1dea54487d60e0b4afe5f6f4fe3d246",
@@ -16,8 +20,10 @@ sample01 =  BlockSample([
                                 "local":{"addr":"192.168.0.137","port":"3001"},
                                 "remote":{"addr":"3.11.145.214","port":"3002"}
                             }
-                        },"env":"8.1.1:ea2c0","host":"mainnetf","loc":null,"msg":"","ns":["cardano.node.BlockFetchClient"],"pid":"1662080","sev":"Info","thread":"17608"}"""),
-    LogEvent.from_logline("""{"app":[],"at":"2023-09-01T14:14:24.56Z",
+                        },"env":"8.1.1:ea2c0","host":"mainnetf","loc":null,"msg":"","ns":["cardano.node.BlockFetchClient"],"pid":"1662080","sev":"Info","thread":"17608"}"""
+            ),
+            LogEvent.from_logline(
+                """{"app":[],"at":"2023-09-01T14:14:24.56Z",
                         "data":{
                             "deltaq":{"G":8.211184152e-2},
                             "head":"dda846c34c0f219c26ded0994ef0beace1dea54487d60e0b4afe5f6f4fe3d246",
@@ -26,8 +32,10 @@ sample01 =  BlockSample([
                                 "local":{"addr":"192.168.0.137","port":"3001"},
                                 "remote":{"addr":"66.45.255.78","port":"6000"}
                             }
-                        },"env":"8.1.1:ea2c0","host":"mainnetf","loc":null,"msg":"","ns":["cardano.node.BlockFetchClient"],"pid":"1662080","sev":"Info","thread":"19105"}"""),
-    LogEvent.from_logline("""{"app":[],"at":"2023-09-01T14:14:24.58Z",
+                        },"env":"8.1.1:ea2c0","host":"mainnetf","loc":null,"msg":"","ns":["cardano.node.BlockFetchClient"],"pid":"1662080","sev":"Info","thread":"19105"}"""
+            ),
+            LogEvent.from_logline(
+                """{"app":[],"at":"2023-09-01T14:14:24.58Z",
                         "data":{
                             "block":"dda846c34c0f219c26ded0994ef0beace1dea54487d60e0b4afe5f6f4fe3d246",
                             "blockNo":9233842,"kind":"ChainSyncClientEvent.TraceDownloadedHeader",
@@ -36,8 +44,10 @@ sample01 =  BlockSample([
                                 "remote":{"addr":"3.216.77.109","port":"3001"}
                             },
                             "slot":102011373
-                        },"env":"8.1.1:ea2c0","host":"mainnetf","loc":null,"msg":"","ns":["cardano.node.ChainSyncClient"],"pid":"1662080","sev":"Info","thread":"19982"}"""),
-    LogEvent.from_logline("""{"app":[],"at":"2023-09-01T14:14:24.61Z",
+                        },"env":"8.1.1:ea2c0","host":"mainnetf","loc":null,"msg":"","ns":["cardano.node.ChainSyncClient"],"pid":"1662080","sev":"Info","thread":"19982"}"""
+            ),
+            LogEvent.from_logline(
+                """{"app":[],"at":"2023-09-01T14:14:24.61Z",
                         "data":{
                             "block":"dda846c34c0f219c26ded0994ef0beace1dea54487d60e0b4afe5f6f4fe3d246",
                             "delay":0.613318494,"kind":"CompletedBlockFetch",
@@ -46,8 +56,10 @@ sample01 =  BlockSample([
                                 "remote":{"addr":"3.11.145.214","port":"3002"}
                             },
                             "size":89587
-                        },"env":"8.1.1:ea2c0","host":"mainnetf","loc":null,"msg":"","ns":["cardano.node.BlockFetchClient"],"pid":"1662080","sev":"Info","thread":"17607"}"""),
-    LogEvent.from_logline("""{"app":[],"at":"2023-09-01T14:14:24.63Z",
+                        },"env":"8.1.1:ea2c0","host":"mainnetf","loc":null,"msg":"","ns":["cardano.node.BlockFetchClient"],"pid":"1662080","sev":"Info","thread":"17607"}"""
+            ),
+            LogEvent.from_logline(
+                """{"app":[],"at":"2023-09-01T14:14:24.63Z",
                         "data":{
                             "block":"dda846c34c0f219c26ded0994ef0beace1dea54487d60e0b4afe5f6f4fe3d246",
                             "blockNo":9233842,
@@ -57,108 +69,154 @@ sample01 =  BlockSample([
                                 "remote":{"addr":"18.158.165.66","port":"3001"}
                             },
                             "slot":102011373
-                        },"env":"8.1.1:ea2c0","host":"mainnetf","loc":null,"msg":"","ns":["cardano.node.ChainSyncClient"],"pid":"1662080","sev":"Info","thread":"20525"}"""),
-    LogEvent.from_logline("""{"app":[],"at":"2023-09-01T14:14:24.67Z",
+                        },"env":"8.1.1:ea2c0","host":"mainnetf","loc":null,"msg":"","ns":["cardano.node.ChainSyncClient"],"pid":"1662080","sev":"Info","thread":"20525"}"""
+            ),
+            LogEvent.from_logline(
+                """{"app":[],"at":"2023-09-01T14:14:24.67Z",
                         "data":{
                             "chainLengthDelta":1,
                             "kind":"TraceAddBlockEvent.AddedToCurrentChain",
                             "newtip":"dda846c34c0f219c26ded0994ef0beace1dea54487d60e0b4afe5f6f4fe3d246@102011373"
-                          },"env":"8.1.1:ea2c0","host":"mainnetf","loc":null,"msg":"","ns":["cardano.node.ChainDB"],"pid":"1662080","sev":"Notice","thread":"191"}"""),
-    ], app_config=AppConfig(None))
+                          },"env":"8.1.1:ea2c0","host":"mainnetf","loc":null,"msg":"","ns":["cardano.node.ChainDB"],"pid":"1662080","sev":"Notice","thread":"191"}"""
+            ),
+        ],
+    )
 
-empty_sample = BlockSample(events=[], app_config=AppConfig(None))
+
+@pytest.fixture
+def empty_sample():
+    return BlockSample(events=[])
 
 
-def test_sample01():
-    fth = sample01.first_trace_header
-    assert fth
+def test_first_trace_header(sample01, empty_sample):
+    assert not empty_sample.first_trace_header
+    assert sample01.first_trace_header
+    assert sample01.first_trace_header.kind == LogEventKind.TRACE_DOWNLOADED_HEADER
 
-    fcb = sample01.first_completed_block
-    assert fcb
 
-    frcb = sample01.fetch_request_completed_block
-    assert frcb
+def test_first_completed_block(sample01, empty_sample):
+    assert not empty_sample.first_completed_block
+    assert sample01.first_completed_block
+    assert sample01.first_completed_block.kind == LogEventKind.COMPLETED_BLOCK_FETCH
 
-    hra = sample01.header_remote_addr
-    assert hra == "3.216.77.109"
 
-    hrp = sample01.header_remote_port
-    assert hrp == "3001"
+def test_fetch_request_completed_block(sample01, empty_sample):
+    assert not empty_sample.fetch_request_completed_block
+    assert sample01.fetch_request_completed_block
+    assert (
+        sample01.fetch_request_completed_block.kind == LogEventKind.SEND_FETCH_REQUEST
+    )
 
-    sn = sample01.slot_num
-    assert sn == 102011373
 
-    st = sample01.slot_time
-    assert st
-    assert type(st) == datetime
+def test_block_adopt(sample01, empty_sample):
+    assert not empty_sample.block_adopt
+    assert sample01.block_adopt.kind == LogEventKind.ADDED_TO_CURRENT_CHAIN
 
-    hd = sample01.header_delta
-    assert hd > 0
-    assert hd == 580
 
-    bn = sample01.block_num
-    assert bn > 0
-    assert bn == 9233842
+def test_is_complete(sample01, empty_sample):
+    assert not empty_sample.is_complete()
+    assert sample01.is_complete()
 
-    bh = sample01.block_hash
-    assert not bh == ""
-    assert bh == "dda846c34c0f219c26ded0994ef0beace1dea54487d60e0b4afe5f6f4fe3d246"
 
-    bhs = sample01.block_hash_short
-    assert not bhs == ""
-    assert bhs == "dda846c34c"
+def test_is_sane(sample01, empty_sample):
+    assert not empty_sample.is_sane()
+    assert sample01.is_sane()
 
-    bs = sample01.block_size
-    assert bs > 0
-    assert bs == 89587
 
-    bd = sample01.block_delay
-    assert bd > 0.0
-    assert bd == 0.613318494
+def test_header_remote_addr(sample01, empty_sample):
+    assert empty_sample.header_remote_addr == ""
+    assert sample01.header_remote_addr == "3.216.77.109"
 
-    brqd = sample01.block_request_delta
-    assert brqd
-    assert brqd == -30
 
-    brsd = sample01.block_response_delta
-    assert brsd
-    assert brsd == 60
+def test_header_remote_port(sample01, empty_sample):
+    assert empty_sample.header_remote_port == ""
+    assert sample01.header_remote_port == "3001"
 
-    ba = sample01.block_adopt
-    assert ba
-    assert ba.kind == LogEventKind.ADDED_TO_CURRENT_CHAIN
 
-    bad = sample01.block_adopt_delta
-    assert bad > 0
-    assert bad == 60
+def test_slot_num(sample01, empty_sample):
+    assert empty_sample.slot_num == 0
+    assert sample01.slot_num == 102011373
 
-    bad = sample01.block_g
-    assert not bad == "0"
-    assert bad == 0.02472594034
 
-    bad = sample01.block_remote_addr
-    assert not bad == ""
-    assert bad == "3.11.145.214"
+def test_slot_time(sample01):
+    assert int(sample01.slot_time.timestamp()) == 1693577664
 
-    bad = sample01.block_remote_port
-    assert not bad == ""
-    assert bad == "3002"
 
-    bad = sample01.block_local_address
-    assert not bad == ""
-    assert bad == "192.168.0.137"
+def test_header_delta(sample01, empty_sample):
+    assert empty_sample.header_delta == 0
+    assert sample01.header_delta == 580
 
-    bad = sample01.block_local_port
-    assert not bad == ""
-    assert bad == "3001"
 
-def test_empty_sample():
-    fth = empty_sample.first_trace_header
-    assert not fth
-    fcb = empty_sample.first_completed_block
-    assert not fcb
-    frcb = empty_sample.fetch_request_completed_block
-    assert not frcb
+def test_block_num(sample01, empty_sample):
+    assert empty_sample.block_num == 0
+    assert sample01.block_num == 9233842
+
+
+def block_hash(sample01, empty_sample):
+    assert empty_sample.block_hash == ""
+    assert empty_sample.block_hash_short == ""
+
+    assert (
+        sample01.block_hash
+        == "dda846c34c0f219c26ded0994ef0beace1dea54487d60e0b4afe5f6f4fe3d246"
+    )
+    assert sample01.block_hash_short == "dda846c34c"
+
+
+def test_block_g(sample01, empty_sample):
+    assert empty_sample.block_g == 0.0
+    assert sample01.block_g == 0.02472594034
+
+
+def test_block_size(sample01, empty_sample):
+    assert empty_sample.block_size == 0
+    assert sample01.block_size == 89587
+
+
+def test_block_delay(sample01, empty_sample):
+    assert empty_sample.block_delay == 0.0
+    assert sample01.block_delay == 0.613318494
+
+
+def test_block_request_delta(sample01, empty_sample):
+    assert empty_sample.block_request_delta == 0
+    assert sample01.block_request_delta == -30
+
+
+def test_block_response_delta(sample01, empty_sample):
+    assert empty_sample.block_response_delta == 0
+    assert sample01.block_response_delta == 60
+
+
+def test_block_adopt_delta(sample01, empty_sample):
+    assert empty_sample.block_adopt_delta == 0
+    assert sample01.block_adopt_delta == 60
+
+
+def test_block_remote_addr(sample01, empty_sample):
+    assert empty_sample.block_remote_addr == ""
+    assert sample01.block_remote_addr == "3.11.145.214"
+
+
+def test_block_remote_port(sample01, empty_sample):
+    assert empty_sample.block_remote_port == ""
+    assert sample01.block_remote_port == "3002"
+
+
+def test_block_local_address(sample01, empty_sample):
+    assert empty_sample.block_local_address == ""
+    assert sample01.block_local_address == "192.168.0.137"
+
+
+def test_block_local_port(sample01, empty_sample):
+    assert empty_sample.block_local_port == ""
+    assert sample01.block_local_port == "3001"
+
+
+def test_slot_fime_of():
+    """Took Slot and time from this Block: https://cardanoscan.io/block/9121756"""
+    slot_time = slot_time_of(99692109, "mainnet")
+    assert int(slot_time.timestamp()) == 1691258400
 
 
 """
