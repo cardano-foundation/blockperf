@@ -276,24 +276,6 @@ class AppConfig:
         return int(self.active_slot_coef) * 3600
 
     @property
-    def sample_logdir() -> Union[Path, None]:
-        _sample_logdir := os.getenv("BLOCKPERF_SAMPLE_LOGDIR", self.config_parser.get(
-            "DEFAULT",
-            "sample_logdir",
-            fallback=None,
-        ))
-
-        if not _sample_logdir:
-            return None
-
-        _sample_logdir_path = Path(_sample_logdir)
-        if not _sample_logdir_path.exists():
-            return None
-
-        return _sample_logdir_path
-
-
-    @property
     def masked_addresses(self) -> list:
         _masked_addresses = os.getenv("BLOCKPERF_MASKED_ADDRESSES", None)
         if not _masked_addresses:

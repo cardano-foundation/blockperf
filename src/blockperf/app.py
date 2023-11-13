@@ -335,7 +335,9 @@ class App:
                     new_lines = fp.readlines()
                     # Create logevents from lines
                     logevents = map(
-                        lambda line: LogEvent.from_logline(line, self.start_time),
+                        lambda line: LogEvent.from_logline(
+                            line, self.app_config.masked_addresses, self.start_time
+                        ),
                         new_lines,
                     )
                     # Filter out None's
