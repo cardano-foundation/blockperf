@@ -342,10 +342,10 @@ class App:
                     logevents = [event for event in logevents if event is not None]
 
                     # Check if the current slot is too old. If it is, sleep
-                    # a moment and start over. This is important for when the node
-                    # is syncing from scratch and producing alot of old logevents
+                    # a while and start over. This is important for when the node
+                    # is syncing from scratch and producing alot of old logevents.
                     if self.slot_is_too_old(logevents):
-                        time.sleep(100)
+                        time.sleep(250)
                         seek_file = True
                         break
 
