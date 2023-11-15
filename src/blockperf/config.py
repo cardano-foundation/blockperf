@@ -272,8 +272,8 @@ class AppConfig:
         return node_service_unit
 
     @property
-    def max_concurrent_blocks(self) -> int:
-        return int(self.active_slot_coef) * 3600
+    def max_concurrent_blocks(self) -> float:
+        return self.active_slot_coef * 3600
 
     @property
     def masked_addresses(self) -> list:
