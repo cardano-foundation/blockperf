@@ -5,6 +5,7 @@ configparser module.
 import ipaddress
 import json
 import os
+import subprocess
 import sys
 import logging
 from configparser import ConfigParser
@@ -135,15 +136,41 @@ class AppConfig:
 
     @property
     def node_config_file(self) -> Path:
+
+        def find_config_path():
+            # Use the systemctl command to find the config file path
+            status_output = subprocess.run(
+                ["systemctl", "status"],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+            if status_output.returncode == 0:
+                # Parse the systemctl output using grep
+                grep_output = subprocess.run(
+                    ["grep", "-oP", "/nix/store/\w+-config-0-0.json"],
+                    input=status_output.stdout,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                )
+                if grep_output.returncode == 0 and grep_output.stdout.strip():
+                    # Return the path found
+                    return grep_output.stdout.strip()
+            # If no path was found, return a default path
+            return "/opt/cardano/cnode/files/config.json"
+
+        result = find_config_path()
+
         node_config_file = os.getenv(
             "BLOCKPERF_NODE_CONFIG",
             self.config_parser.get(
                 "DEFAULT",
                 "node_config",
-                fallback="/opt/cardano/cnode/files/config.json",
+                fallback=find_config_path(),
             ),
         )
-        return Path(node_config_file)
+        return Path(result)
 
     @property
     def node_config(self) -> dict:
