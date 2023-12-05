@@ -150,10 +150,15 @@ class LogEvent:
         if self.newtip:
             self.newtip = self.newtip.split("@")[0]
 
-        self.local_addr = self.data.get("peer", {}).get("local", {}).get("addr", "")
-        self.local_port = self.data.get("peer", {}).get("local", {}).get("port", "")
-        self.remote_addr = self.data.get("peer", {}).get("remote", {}).get("addr", "")
-        self.remote_port = self.data.get("peer", {}).get("remote", {}).get("port", "")
+        if self.kind in (
+            LogEventKind.TRACE_DOWNLOADED_HEADER,
+            LogEventKind.SEND_FETCH_REQUEST,
+            LogEventKind.COMPLETED_BLOCK_FETCH,
+        ):
+            self.local_addr = self.data.get("peer", {}).get("local", {}).get("addr", "")
+            self.local_port = self.data.get("peer", {}).get("local", {}).get("port", "")
+            self.remote_addr = self.data.get("peer", {}).get("remote", {}).get("addr", "")
+            self.remote_port = self.data.get("peer", {}).get("remote", {}).get("port", "")
 
     def __repr__(self):
         _kind = self.kind.value
