@@ -74,7 +74,7 @@ class BlockSample:
                               # Take deltaq.G from that FetchRequest
     """
 
-    trace_events = list()
+    trace_events: list = []
 
     def __init__(self, events: list) -> None:
         """Creates LogEvent and orders the events by at field"""

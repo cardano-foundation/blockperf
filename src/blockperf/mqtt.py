@@ -50,12 +50,12 @@ class MQTTClient(mqtt.Client):
     def on_connect_fail(self, client, obj):
         logger.warning("Connection Failed")
 
-    def on_disconnect(self, client, userdata, reasonCode, properties) -> None:
+    def on_disconnect(self, client, userdata, reasonCode, properties) -> None:  # type: ignore
         """Called when disconnected from broker
         See paho.mqtt.client.py on_disconnect()"""
         logger.warning("Connection disconnected %s", reasonCode)
 
-    def on_publish(self, client, userdata, mid) -> None:
+    def on_publish(self, client, userdata, mid) -> None:  # type: ignore
         """Called when a message is actually received by the broker.
         See paho.mqtt.client.py on_publish()"""
         # There should be a way to know which messages belongs to which
@@ -74,7 +74,7 @@ class MQTTClient(mqtt.Client):
         """
         logger.debug("%s - %s", level, buf)
 
-    def publish(self, topic: str, payload: dict):
+    def publish(self, topic: str, payload: dict):  # type: ignore
         """
 
         MQTTClient publish:

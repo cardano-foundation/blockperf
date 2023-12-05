@@ -27,14 +27,14 @@ class App:
     start_time: int
 
     # holds a dictionairy for each kind of events for each block_hash
-    logevents = {}
+    logevents: dict = {}
     # the list of all published hashes, to not publish a hash twice
-    published_blocks = []
+    published_blocks: list = []
     # Stores the last X hashes before they are deleted from logevents and published_blocks
-    working_hashes = collections.deque()
+    working_hashes: collections.deque = collections.deque()
 
     def __init__(self, config: AppConfig) -> None:
-        self.q = queue.Queue(maxsize=50)
+        self.q: queue.Queue = queue.Queue(maxsize=50)
         self.app_config = config
         self.start_time = int(datetime.now().timestamp())
 
@@ -352,7 +352,7 @@ class App:
                         break
 
                     # Yield all events
-                    logger.debug(f"Found {len(logevents)} logevents")
+                    # logger.debug(f"Found {len(logevents)} logevents")
                     yield from logevents
 
                     # If no new_lines are returned check if the symlink changed
