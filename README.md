@@ -31,7 +31,7 @@ in the cardano-node configuration.
 
 * Enable tracers
 
-The default configuration files from https://book.world.dev.cardano.org/environments.html have some tracers enabled. You need to enable the following:
+The default configuration files from <https://book.world.dev.cardano.org/environments.html> have some tracers enabled. You need to enable the following:
 
 ```json
 "TraceChainSyncClient": true,
@@ -70,8 +70,7 @@ blockperf --help
 > **Note**
 > You must activate the virtual environment everytime you want to work with
 > blockperf. See docs if you are new to virtual environments:
-> https://docs.python.org/3/tutorial/venv.html
-
+> <https://docs.python.org/3/tutorial/venv.html>
 
 **Test your installation**
 
@@ -131,10 +130,3 @@ KillSignal=SIGINT
 SyslogIdentifier=blockperf
 TimeoutStopSec=5
 ```
-
-## Receive client identifier, certificate and key
-
-Our plan is to have a somehwat automated process that leverages CIP-22 to
-have SPOs be able to identify themselves and retrieve certificates.
-However, that is not in place right now so currently it is a  very manual
-approach. Just ping me (Manuel) if you need to get one or create a new one.
