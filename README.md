@@ -3,7 +3,13 @@
 Cardano blockperf constantly reads the cardano-node logfiles and measures block
 propagation times in the network as seen from that node. The data created will
 be sent to an MQTT Broker for collection and further analysis. The Broker
-currently runs on AWS' IoT Core Platform.
+currently runs on AWS' IoT Core Platform and is operated by the Cardano Foundation. 
+Aggregated data sets of all single nodes' data points are published here on a daily basis: <https://data.blockperf.cardanofoundation.org/> 
+A visualized version will be publicly available soon.
+
+If you want to contribute your nodes' propagation times, please get in touch with 
+the Cardano Foundation's OPS & Infrastructure team to receive your blockperf client certificate. 
+Most valuable are nodes located in geographically remote locations or outside hotspots.
 
 ## Configuration of cardano-node
 
@@ -38,7 +44,7 @@ The default configuration files from <https://book.world.dev.cardano.org/environ
 "TraceBlockFetchClient": true,
 ```
 
-## Installaing blockperf
+## Installing blockperf
 
 To install blockperf you need to clone it from the github repository. I recommend
 you use a virtualenv. The topic of virtual environments in python can be daunting
