@@ -102,7 +102,8 @@ class AppConfig:
         ), "TraceBlockFetchClient not enabled"
         # What are the other possible values? This should allow everything that is above Normal
         assert (
-            self.node_config.get("TracingVerbosity", "") == "NormalVerbosity"
+            self.node_config.get("TracingVerbosity", "")
+            in ("NormalVerbosity", "MaximalVerbosity"),
         ), "TracingVerbosity not enabled"
 
     @property
