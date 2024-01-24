@@ -352,7 +352,7 @@ class App:
                         break
 
                     # Yield all events
-                    # logger.debug(f"Found {len(logevents)} logevents")
+                    logger.debug(f"Found {len(logevents)} logevents")
                     yield from logevents
 
                     # If no new_lines are returned check if the symlink changed
