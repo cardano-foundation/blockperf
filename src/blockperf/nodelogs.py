@@ -157,8 +157,12 @@ class LogEvent:
         ):
             self.local_addr = self.data.get("peer", {}).get("local", {}).get("addr", "")
             self.local_port = self.data.get("peer", {}).get("local", {}).get("port", "")
-            self.remote_addr = self.data.get("peer", {}).get("remote", {}).get("addr", "")
-            self.remote_port = self.data.get("peer", {}).get("remote", {}).get("port", "")
+            self.remote_addr = (
+                self.data.get("peer", {}).get("remote", {}).get("addr", "")
+            )
+            self.remote_port = (
+                self.data.get("peer", {}).get("remote", {}).get("port", "")
+            )
 
     def __repr__(self):
         _kind = self.kind.value

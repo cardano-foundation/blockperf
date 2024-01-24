@@ -34,8 +34,8 @@ def setup_logger(debug: bool):
             },
             "extra": {
                 "format": "%(asctime)-16s %(name)-8s %(filename)-12s %(lineno)-6s %(funcName)-30s %(levelname)-8s %(message)s",
-                "datefmt": "%m-%d %H:%M:%S"
-            }
+                "datefmt": "%m-%d %H:%M:%S",
+            },
         },
         "handlers": {
             "console": {
@@ -54,16 +54,8 @@ def setup_logger(debug: bool):
             #    "backupCount": 2,
             # }
         },
-        "loggers": {
-            "blockperf": {
-                "level": "DEBUG",
-                "handlers": []
-            }
-        },
-        "root": {
-            "level": level,
-            "handlers": ["console"]
-        }
+        "loggers": {"blockperf": {"level": "DEBUG", "handlers": []}},
+        "root": {"level": level, "handlers": ["console"]},
     }
     dictConfig(logger_config)
 
@@ -74,8 +66,7 @@ def setup_argparse():
     parser.add_argument(
         "command", help="Command to run blockperf with", choices=["run"]
     )
-    parser.add_argument(
-        "--debug", help="Write more debug output", action="store_true")
+    parser.add_argument("--debug", help="Write more debug output", action="store_true")
     return parser.parse_args()
 
 
