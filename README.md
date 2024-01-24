@@ -3,12 +3,12 @@
 Cardano blockperf constantly reads the cardano-node logfiles and measures block
 propagation times in the network as seen from that node. The data created will
 be sent to an MQTT Broker for collection and further analysis. The Broker
-currently runs on AWS' IoT Core Platform and is operated by the Cardano Foundation. 
-Aggregated data sets of all single nodes' data points are published here on a daily basis: <https://data.blockperf.cardanofoundation.org/> 
+currently runs on AWS' IoT Core Platform and is operated by the Cardano Foundation.
+Aggregated data sets of all single nodes' data points are published here on a daily basis: <https://data.blockperf.cardanofoundation.org/>
 A visualized version will be publicly available soon.
 
-If you want to contribute your nodes' propagation times, please get in touch with 
-the Cardano Foundation's OPS & Infrastructure team to receive your blockperf client certificate. 
+If you want to contribute your nodes' propagation times, please get in touch with
+the Cardano Foundation's OPS & Infrastructure team to receive your blockperf client certificate.
 Most valuable are nodes located in geographically remote locations or outside hotspots.
 
 ## Configuration of cardano-node
@@ -135,4 +135,35 @@ ExecStart=/opt/cardano/cnode/blockperf/.venv/bin/blockperf run
 KillSignal=SIGINT
 SyslogIdentifier=blockperf
 TimeoutStopSec=5
+```
+
+## Development
+
+* Create venv and activate if you have not yet already
+
+```bash
+python3 -m venv .venv
+```
+
+* Install development dependencies
+
+```bash
+pip install -r dev_requirements.txt
+```
+
+* Run tests
+
+```bash
+pytest
+```
+
+* run mypy
+
+```bash
+# prior to running mypy you need to install thes types from 3rd party libraries
+pip install types-paho-mqtt
+pip install types-psutil
+
+# Then run mypy
+mypy src
 ```
