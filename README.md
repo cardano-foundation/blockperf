@@ -103,8 +103,10 @@ BLOCKPERF_NAME="XX"
 BLOCKPERF_CLIENT_CERT="XXX"
 # path to your client key file
 BLOCKPERF_CLIENT_KEY="XXX"
-# path to amazons ca file in pem format, find it here: https://www.amazontrust.com/repository/
-# https://www.amazontrust.com/repository/AmazonRootCA1.pem
+# Comma separated list of ip addresses that you do not want to share
+# You will most likely want to add your block producing node's ip address here
+BLOCKPERF_MASKED_ADDRESSES="x.x.x.x,x.x.x.x"
+# path to amazons ca file in pem format, find it here: https://www.amazontrust.com/repository/AmazonRootCA1.pem
 BLOCKPERF_AMAZON_CA="XXX"
 ```
 
