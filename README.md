@@ -1,3 +1,5 @@
+[![Nix](https://github.com/cardano-foundation/blockperf/actions/workflows/nix.yml/badge.svg)](https://github.com/cardano-foundation/blockperf/actions/workflows/nix.yml)
+
 # Cardano blockperf
 
 Cardano blockperf constantly reads the cardano-node logfiles and measures block
