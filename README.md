@@ -60,9 +60,9 @@ up to you, its just a python package after all.
 ```bash
 # Create the folder you want blockperf to live in
 # cd into it and clone the repo
-mkdir -p /opt/blockperf
-cd /opt/blockperf
-git clone git@github.com:cardano-foundation/blockperf.git .
+mkdir -p ~/blockperf
+cd ~/blockperf
+git clone https://github.com/cardano-foundation/blockperf.git .
 
 # Create a venv and activate it.
 python3 -m venv .venv
@@ -79,14 +79,6 @@ blockperf --help
 > You must activate the virtual environment everytime you want to work with
 > blockperf. See docs if you are new to virtual environments:
 > <https://docs.python.org/3/tutorial/venv.html>
-
-**Test your installation**
-
-```bash
-# Remember to activate the virtual environment if not in the same shell as above
-# source .venv/bin/activate
-blockperf run
-```
 
 ## Configuration of blockperf
 
@@ -139,6 +131,16 @@ ExecStart=/opt/cardano/cnode/blockperf/.venv/bin/blockperf run
 KillSignal=SIGINT
 SyslogIdentifier=blockperf
 TimeoutStopSec=5
+```
+## Run Blockperf
+
+Once you have configured the environment variables you should be able to
+run blockperf.
+
+```bash
+# Remember to activate the virtual environment if not in the same shell as above
+# source .venv/bin/activate
+blockperf run
 ```
 
 ## Development
