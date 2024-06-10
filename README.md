@@ -103,12 +103,9 @@ environment will then get all the dependencies of the application installed into
 them instead of your system. If you are interested you might find this link
 usefull <https://realpython.com/python-virtual-environments-a-primer/>
 
-
-The virtual environment allows you to have blockperf and its dependencies installed
-in a place where it will not interfere with your system. So i recommend you use it.
-Although the venv module is part of the standard library of python since 3.3
-debian/ubuntu (and other distros probably as well) have seperated it into its own
-package. So you might need to install `apt install python3-venv`.
+The [venv module](https://docs.python.org/3/library/venv.html) is part of the
+standard library of python since 3.3. However debian/ubuntu have seperated it
+into its own package. So you might need to install `apt install python3-venv`.
 
 Create a folder where you create the virtual environment in.
 
@@ -127,15 +124,21 @@ pip install git+https://github.com/cardano-foundation/blockperf
 # Test it by issuing the command, it should print some help ...
 blockperf --help
 ```
-Now blockperf is installed within the virtual environment. So make sure
-to reactivate it should you have changed shells using the  `source .venv/bin/activate`
-command.
 
-**Generally speaking: What you need to do is to provide the environment variable**
-**configuration and run blockperf from within the venv you just created.**
+Now blockperf is installed within the virtual environment. Make sure to reactivate
+it should you have changed shells using the  `source .venv/bin/activate` command.
 
-Here is an example of a systemd unit. Remember to check the specific values. You
-may have a different user, or paths!
+
+> **Note**
+> Generally speaking: What you need to do is to provide the environment variable
+> configuration and run blockperf from within the venv you just created.
+
+
+**Systemd Unit**
+
+Here is an example of a systemd unit that runs blockperf from within its
+virtual environment. Remember to check the specific values. You may have different paths
+or other settings need to be changed!
 
 ```ini
 [Unit]
@@ -161,7 +164,7 @@ set -a
 source /etc/default/blockperf
 ```
 
-Then start the service using systemctl.
+Reload systemd and start the service using systemctl.
 
 ### Using Docker
 
