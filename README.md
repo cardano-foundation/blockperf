@@ -2,21 +2,23 @@
 
 # Cardano blockperf
 
-Cardano blockperf constantly reads the cardano-node logfiles and measures block
-propagation times in the network as seen from that node. The data created will
-be sent to an MQTT Broker for collection and further analysis. The Broker
-currently runs on AWS' IoT Core Platform and is operated by the Cardano Foundation.
-Aggregated data sets of all single nodes' data points are published here on a daily basis: <https://data.blockperf.cardanofoundation.org/>
+Cardano blockperf constantly reads the cardano-node logfile. This allows it to
+measures block propagation times in the network as seen from that node. The data
+created will be sent to an MQTT Broker for collection and further analysis. The
+Broker runs on AWS' IoT Core Platform. Aggregated data sets of all single nodes'
+data points are published on a daily basis: <https://data.blockperf.cardanofoundation.org/>
 A visualized version will be publicly available soon.
 
-If you want to contribute your nodes' propagation times, please get in touch with
-the Cardano Foundation's OPS & Infrastructure team to receive your blockperf client certificate.
-Most valuable are nodes located in geographically remote locations or outside hotspots.
+If you want to contribute, please get in touch with the Cardano Foundation's
+OPS & Infrastructure team to receive a openssl client certificate.
+This certificate is needed to authenticate to the mqtt broker service. Most valuable
+are nodes located in geographically remote locations or outside hotspots.
 
-## Configuration of cardano-node
+## Configuring the cardano-node
 
-For blockperf to be able to work you need to change the following
-in the cardano-node configuration.
+Blockperf constantly reads the node logfile. The default cardano-node config file
+however is not providing all the relevant data points and will also not write
+the logs into a file. Change the following in your node config:
 
 * Make the node log to a json file
 
@@ -37,85 +39,96 @@ in the cardano-node configuration.
 ]
 ```
 
-* Enable tracers
-
-The default configuration files from <https://book.world.dev.cardano.org/environments.html> have some tracers enabled. You need to enable the following:
+* Enable these traces
 
 ```json
 "TraceChainSyncClient": true,
 "TraceBlockFetchClient": true,
 ```
 
-## Installing blockperf
+## Configuring blockperf
 
-To install blockperf you need to clone it from the github repository. I recommend
-you use a virtualenv. The topic of virtual environments in python can be daunting
-if you are new to it. The way i would reccomend is the most simple way of creating
-virtual environments by using the builtin venv module (examples see below)
-<https://docs.python.org/3/library/venv.html>. This creates lightweight python
-environments with their own installation path so you dont need to install things
-in your system python environmnet. However, the way you install blockperf is
-up to you, its just a python package after all.
+Blockperf needs access to the nodes config file. It also needs to know the file
+where the node logs to. This will allow Blockperf to get the needed data.
+
+Blockperf sends its data using mqtt to AWS' IoT Core Broker service. Therefore
+blockperf needs to authenticate. We use X.509 client certificates to do that.
+These need to be registered in aws in order to allow clients access. Contact CF
+for how to get one such certificate. Once you have your certificate and private
+key for it, store it somewhere on disk. As well as the certificate from the
+signing Root CA from Amazon Trust Services which you can find here [AmazonRootCA1.pem](https://www.amazontrust.com/repository/AmazonRootCA1.pem)
+
+With the certificate you will also receive a "client identifier" or name. This name
+is also part of the certificate and is needed to properly authenticate and more
+importantly publish message to a specific mqtt topic.
+
+To send the data blockperf also kneeds to know the public IP Address (and Port)
+whith which that relay is being accessed over. The IP adress will be send
+along with the other data. If you do not want that you can specify a list of
+addresses that you never want to disclose.
+
+The following are the environment variables for these previously described
+configurations. You'll need to adapt to your environment. I usually store these
+in a file `/etc/default/blockperf` and reference that from the systemd unit.
+
+```bash
+# Your cardano-node's config and logfiles.
+BLOCKPERF_NODE_CONFIG="/opt/cardano/cnode/files/config.json"
+BLOCKPERF_NODE_LOGFILE="/opt/cardano/cnode/logs/node.json"
+
+# X.509 client certificate, key and signing CA
+BLOCKPERF_CLIENT_CERT="XXX" # path to client certificate
+BLOCKPERF_CLIENT_KEY="XXX"  # path to certificate key
+BLOCKPERF_AMAZON_CA="XXX"   # grab from https://www.amazontrust.com/repository/AmazonRootCA1.pem
+
+# your client identifier, this is like unique id/name whith which we cann attache
+# policies to the certificates below to authenticate. You can not just invent this
+# this will be given to you with the ssl certificates that you'll need.
+BLOCKPERF_NAME="XX"
+BLOCKPERF_RELAY_PUBLIC_IP="x.x.x.x"
+BLOCKPERF_RELAY_PUBLIC_PORT="3001"
+# If you do not want to share certain ips of your setup, list them here and
+# blockperf will not send these out to the broker.
+BLOCKPERF_MASKED_ADDRESSES="x.x.x.x,x.x.x.x"
+```
+
+
+### Run (without docker)
+
+I assume you have some understanding of python virtualenvironments. If not
+you should read this: <https://realpython.com/python-virtual-environments-a-primer/>.
+
+The virtual environment allows you to have blockperf and its dependencies installed
+in a place where it will not interfere with your system. So i recommend you use it.
+Although the venv module is part of the standard library of python since 3.3
+debian/ubuntu (and other distros probably as well) have seperated it into its own
+package. So you might need to install `apt install python3-venv`.
+
+Create a folder where you create the virtual environment in.
 
 ```bash
 # Create the folder you want blockperf to live in
-# cd into it and clone the repo
 mkdir -p ~/blockperf
 cd ~/blockperf
-git clone https://github.com/cardano-foundation/blockperf.git .
 
-# Create a venv and activate it.
-python3 -m venv .venv
-source .venv/bin/activate
+# Create the venv and activate it.
+python3 -m venv venv
+source venv/bin/activate
 
 # Install blockperf via pip
-pip install .
+pip install git+https://github.com/cardano-foundation/blockperf
 
 # Test it by issuing the command, it should print some help ...
 blockperf --help
 ```
+Now blockperf is installed within the virtual environment. So make sure
+to reactivate it should you have changed shells using the  `source .venv/bin/activate`
+command.
 
-> **Note**
-> You must activate the virtual environment everytime you want to work with
-> blockperf. See docs if you are new to virtual environments:
-> <https://docs.python.org/3/tutorial/venv.html>
-
-## Configuration of blockperf
-
-To configure blockperf configure the following environment variables
-
-```bash
-# Path to you cardano-node's config
-BLOCKPERF_NODE_CONFIG="/opt/cardano/cnode/files/config.json"
-# Path to your cardano-node's logfile
-BLOCKPERF_NODE_LOGFILE="/opt/cardano/cnode/logs/node.json"
-# The public ip address your node is reachable at
-BLOCKPERF_RELAY_PUBLIC_IP="x.x.x.x"
-# your client identifier, will be given to you with the certificates
-BLOCKPERF_NAME="XX"
-# path to your client certificate file
-BLOCKPERF_CLIENT_CERT="XXX"
-# path to your client key file
-BLOCKPERF_CLIENT_KEY="XXX"
-# Comma separated list of ip addresses that you do not want to share
-# You will most likely want to add your block producing node's ip address here
-BLOCKPERF_MASKED_ADDRESSES="x.x.x.x,x.x.x.x"
-# path to amazons ca file in pem format, find it here: https://www.amazontrust.com/repository/AmazonRootCA1.pem
-BLOCKPERF_AMAZON_CA="XXX"
-```
-
-You could put all of the above in a file `/etc/default/blockperf` and then
-have your shell load that with
-
-```bash
-set -a
-source /etc/default/blockperf
-```
-
-**Systemd service**
-
-A simple example of blockperf as service unit. Remember to set the
-executable to blockperf within the virtual environment you have installed it in!
+Here is an example of a systemd unit. Remember to check the specific values. You
+may have a different user, or paths. **Generally speaking what you need to do is to**
+**provide the environment variable configuration and run blockperf from within**
+**the venv you just created.**
 
 ```ini
 [Unit]
@@ -127,49 +140,40 @@ Restart=always
 RestartSec=20
 User=ubuntu
 EnvironmentFile=/etc/default/blockperf
-ExecStart=/opt/cardano/cnode/blockperf/.venv/bin/blockperf run
+ExecStart=/home/ubuntu/blockperf/.venv/bin/blockperf run
 KillSignal=SIGINT
 SyslogIdentifier=blockperf
 TimeoutStopSec=5
 ```
-## Run Blockperf
 
-Once you have configured the environment variables you should be able to
-run blockperf.
+Once you have written the above into e.g. `/etc/systemd/system/cardano-node.service`
+You can load your configuration like so
 
 ```bash
-# Remember to activate the virtual environment if not in the same shell as above
-# source .venv/bin/activate
-blockperf run
+set -a
+source /etc/default/blockperf
 ```
 
-## Development
+Then start the service using systemctl.
 
-* Create venv and activate if you have not yet already
+### Using Docker
 
-```bash
-python3 -m venv .venv
-```
+There is a basic Dockerfile that will build an image with python3.12 and blockperf
+installed in it. Have a look into it and build your image. You would then
+need to find a way to provide all the files we discussed above into the container.
 
-* Install development dependencies
-
-```bash
-pip install -r dev_requirements.txt
-```
-
-* Run tests
+The most straight forward example might be using bind mounts with a docker run
+call similar to this. All your paths obviosuly need to be adopted to match your
+environment. Keep in mind: The paths you specify in the environment variables
+must match the environment the process sees within the container.
 
 ```bash
-pytest
-```
-
-* run mypy
-
-```bash
-# prior to running mypy you need to install thes types from 3rd party libraries
-pip install types-paho-mqtt
-pip install types-psutil
-
-# Then run mypy
-mypy src
+  docker run -it --env-file blockperf.env                                                         \
+		--mount type=bind,source=/opt/cardano/cnode/files/config.json,target=/opt/cardano/config.json \
+		--mount type=bind,source=/opt/cardano/cnode/logs/node.json,target=/opt/cardano/logs/node.json \
+		--mount type=bind,source=/etc/blockperf/client.pem,target=/opt/cardano/client.pem             \
+		--mount type=bind,source=/etc/blockperf/client.key,target=/opt/cardano/client.key             \
+		--mount type=bind,source=/etc/blockperf/amazonca.pem,target=/opt/cardano/amazonca.pem         \
+		--mount type=bind,source=/opt/cardano/cnode/files/shelley-genesis.json,target=/opt/cardano/shelley-genesis.json \
+		blockperf blockperf run
 ```
