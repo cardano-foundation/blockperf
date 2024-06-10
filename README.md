@@ -97,8 +97,12 @@ BLOCKPERF_MASKED_ADDRESSES="x.x.x.x,x.x.x.x"
 
 ### Run (without docker)
 
-I assume you have some understanding of python virtualenvironments. If not
-you should read this: <https://realpython.com/python-virtual-environments-a-primer/>.
+I assume you have some understanding of python virtualenvironments. If not:
+the basic idea is to create isolated environments to run applications in. These
+environment will then get all the dependencies of the application installed into
+them instead of your system. If you are interested you might find this link
+usefull <https://realpython.com/python-virtual-environments-a-primer/>
+
 
 The virtual environment allows you to have blockperf and its dependencies installed
 in a place where it will not interfere with your system. So i recommend you use it.
