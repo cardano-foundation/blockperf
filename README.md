@@ -2,12 +2,14 @@
 
 # Cardano blockperf
 
-Cardano blockperf constantly reads the cardano-node logfile. This allows it to
-measures block propagation times in the network as seen from that node. The data
-created will be sent to an MQTT Broker for collection and further analysis. The
-Broker runs on AWS' IoT Core Platform. Aggregated data sets of all single nodes'
-data points are published on a daily basis: <https://data.blockperf.cardanofoundation.org/>
-A visualized version will be publicly available soon.
+Blockperf measures block propagation times in the network. By reading the nodes
+log file (watching for specific traces in it) it is able to tell when and from
+where block header/body arrived or block has been adopted. This data is then send
+to a backend run by the Cardano Foundation for further analyzation.
+
+Aggregated data sets of all single nodes' data points are published on a daily
+basis: <https://data.blockperf.cardanofoundation.org/>. A visualized version will
+be publicly available soon.
 
 If you want to contribute, please get in touch with the Cardano Foundation's
 OPS & Infrastructure team to receive a openssl client certificate.
@@ -16,9 +18,9 @@ are nodes located in geographically remote locations or outside hotspots.
 
 ## Configuring the cardano-node
 
-Blockperf constantly reads the node logfile. The default cardano-node config file
-however is not providing all the relevant data points and will also not write
-the logs into a file. Change the following in your node config:
+For blockperf to work the node config needs to have the following configured.
+Keep in mind, the path is your choice. Its only important that you then later
+tell blockperf the same where to find them.
 
 * Make the node log to a json file
 
@@ -49,7 +51,7 @@ the logs into a file. Change the following in your node config:
 ## Configuring blockperf
 
 Blockperf needs access to the nodes config file. It also needs to know the file
-where the node logs to. This will allow Blockperf to get the needed data.
+where the node logs to.
 
 Blockperf sends its data using mqtt to AWS' IoT Core Broker service. Therefore
 blockperf needs to authenticate. We use X.509 client certificates to do that.
@@ -125,10 +127,11 @@ Now blockperf is installed within the virtual environment. So make sure
 to reactivate it should you have changed shells using the  `source .venv/bin/activate`
 command.
 
+**Generally speaking: What you need to do is to provide the environment variable**
+**configuration and run blockperf from within the venv you just created.**
+
 Here is an example of a systemd unit. Remember to check the specific values. You
-may have a different user, or paths. **Generally speaking what you need to do is to**
-**provide the environment variable configuration and run blockperf from within**
-**the venv you just created.**
+may have a different user, or paths!
 
 ```ini
 [Unit]
