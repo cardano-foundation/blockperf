@@ -156,15 +156,19 @@ SyslogIdentifier=blockperf
 TimeoutStopSec=5
 ```
 
-Once you have written the above into e.g. `/etc/systemd/system/cardano-node.service`
-You can load your configuration like so
+Once you have written the above into e.g. `/etc/systemd/system/blockperf.service` you
+need to reload systemd and start the service.
 
 ```bash
-set -a
-source /etc/default/blockperf
+sudo systemctl daemon-reloadsudo systemctl daemon-reload
+sudo systemctl start blockperf 
 ```
 
-Reload systemd and start the service using systemctl.
+Inspect logs with 
+
+```bash
+journalctl -fu blockperf
+```
 
 ### Using Docker
 
