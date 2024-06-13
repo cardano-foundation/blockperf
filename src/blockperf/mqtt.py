@@ -1,15 +1,17 @@
 """MQTT Client
 """
-import sys
-import logging
+
 import json
+import logging
+import sys
+
 from paho.mqtt.client import MQTTMessageInfo
 from paho.mqtt.properties import Properties as Properties
 
 try:
     import paho.mqtt.client as mqtt
-    from paho.mqtt.properties import Properties
     from paho.mqtt.packettypes import PacketTypes
+    from paho.mqtt.properties import Properties
 except ImportError:
     sys.exit(
         "This script needs paho-mqtt package.\n"

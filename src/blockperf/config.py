@@ -2,11 +2,12 @@
 App Configuration is done either via Environment variables or the stdlib
 configparser module.
 """
+
 import ipaddress
 import json
+import logging
 import os
 import sys
-import logging
 from configparser import ConfigParser
 from pathlib import Path
 from typing import Union

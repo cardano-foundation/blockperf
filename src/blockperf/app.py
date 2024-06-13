@@ -1,21 +1,19 @@
-import sys
 import collections
-from datetime import datetime, timezone, timedelta
 import json
 import logging
-import queue
 import os
+import queue
+import sys
 import threading
 import time
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from blockperf import __version__ as blockperf_version
-from blockperf.config import AppConfig
-
 from blockperf.blocksample import BlockSample, slot_time_of
-from blockperf.nodelogs import LogEventKind, LogEvent
+from blockperf.config import AppConfig
 from blockperf.mqtt import MQTTClient
-
+from blockperf.nodelogs import LogEvent, LogEventKind
 
 logger = logging.getLogger(__name__)
 

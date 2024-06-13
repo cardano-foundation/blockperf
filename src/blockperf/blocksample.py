@@ -1,14 +1,14 @@
 # import json
 # import sys
 # from enum import Enum
-from typing import Union
-from datetime import datetime, timezone
 import logging
+from datetime import datetime, timezone
+from typing import Union
 
 from blockperf import __version__ as blockperf_version
 
 # from blockperf.config import AppConfig
-from blockperf.nodelogs import LogEventKind, LogEvent
+from blockperf.nodelogs import LogEvent, LogEventKind
 
 # logging.basicConfig(level=logging.DEBUG, format="(%(threadName)-9s) %(message)s")
 logger = logging.getLogger(__name__)
