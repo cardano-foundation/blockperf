@@ -13,18 +13,19 @@ from blockperf.nodelogs import LogEventKind, LogEvent
 # logging.basicConfig(level=logging.DEBUG, format="(%(threadName)-9s) %(message)s")
 logger = logging.getLogger(__name__)
 
-
 NETWORK_STARTTIMES = {
-    "mainnet": 1591566291,
-    "preview": 1655683200,
-    "preprod": 1660003200,
+    # mainnet
+    764824073: 1591566291,
+    # preprod
+    1: 1655683200,
 }
 
 
-def slot_time_of(slot_num: int, network: str = "mainnet") -> datetime:
+def slot_time_of(slot_num: int, network: int) -> datetime:
     """Calculate the timestamp that given slot should have occured.
     Works only if the networks slots are 1 second lenghts!
     """
+    logger.info("slot_time_of(%s, %s", slot_num, network)
     if network not in NETWORK_STARTTIMES:
         raise ValueError(f"No starttime for {network} available")
 
@@ -76,10 +77,24 @@ class BlockSample:
 
     trace_events: list = []
 
-    def __init__(self, events: list) -> None:
+    def __init__(self, events: list, network_magic: int) -> None:
         """Creates LogEvent and orders the events by at field"""
         events.sort(key=lambda x: x.at)
         self.trace_events = events
+        self.network_magic = network_magic
+
+    def __str__(self):
+        """ """
+        return (
+            f"block_num: {self.block_num} \n"
+            f"slot_num {self.slot_num} \n"
+            f"block_hash len: {len(self.block_hash)} \n"
+            f"block_size: {self.block_size} \n"
+            f"header_delta {self.header_delta} \n"
+            f"block_request_delta {self.block_request_delta}\n"
+            f"block_response_delta  {self.block_response_delta}\n"
+            f"block_adopt_delta {self.block_adopt_delta} \n"
+        )
 
     def is_complete(self) -> bool:
         """Determines if all needed LogEvents are in this sample"""
@@ -98,6 +113,7 @@ class BlockSample:
         """Returnms first TRACE_DOWNLOADED_HEADER received"""
         for event in self.trace_events:
             if event.kind == LogEventKind.TRACE_DOWNLOADED_HEADER:
+                logger.info("Found first TraceHeader %s", event.atstr)
                 return event
         return None
 
@@ -156,7 +172,7 @@ class BlockSample:
     @property
     def slot_time(self) -> datetime:
         """Determine the time that current slot_num should have happened."""
-        _slot_time = slot_time_of(self.slot_num)
+        _slot_time = slot_time_of(self.slot_num, self.network_magic)
         return _slot_time
 
     @property
