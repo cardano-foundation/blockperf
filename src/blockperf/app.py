@@ -128,15 +128,7 @@ class App:
         * logevents holds all events recorded for all hashes seen.
         * published_blocks holds hashes of all published blocks.
 
-        LogEvents hashes eventually get adopted (or not). But this may
-        take some time. I want to wait for some time (config.max_concurrent_blocks)
-        before i drop that hash.
-
-        Samples for blocks that already have a sample published should not get
-        republished. Thus the list of published_blocks.
-
-        To not have both lists grow indefinetly i use the deque in self.working_hashes.
-        Once it reaches a certain size, the hashes that are added first will
+        LogEvents hashes eventuallnetworkize, the hashes that are added first will
         get popped of and delete from the other two lists.
         """
         if len(self.working_hashes) > self.app_config.max_concurrent_blocks:
@@ -233,7 +225,7 @@ class App:
             for event_kind_list in self.logevents[_block_hash].values():
                 all_events.extend(event_kind_list)
 
-            new_sample = BlockSample(all_events)
+            new_sample = BlockSample(all_events, self.app_config.network_magic)
 
             # Check BlockSample has all needed Events to produce sample
             if not new_sample.is_complete():
@@ -242,7 +234,7 @@ class App:
 
             # Check values are in acceptable ranges
             if not new_sample.is_sane():
-                logger.debug("Insane values for sample %s", new_sample)
+                logger.info("Insane values for block \n%s\n", new_sample)
                 continue
 
             logger.info("Sample for %s created", _block_hash_short)
@@ -299,7 +291,7 @@ class App:
 
         # If there is one, check its slot_time
         trace_header = trace_headers.pop(0)
-        slot_time = slot_time_of(trace_header.slot_num)
+        slot_time = slot_time_of(trace_header.slot_num, self.app_config.network_magic)
         if slot_time < datetime.now(tz=timezone.utc) - timedelta(hours=12):
             logger.info(
                 "Slot %s is too old (%s)",
