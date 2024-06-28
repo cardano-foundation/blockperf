@@ -13,15 +13,11 @@ from blockperf.nodelogs import LogEventKind, LogEvent
 # logging.basicConfig(level=logging.DEBUG, format="(%(threadName)-9s) %(message)s")
 logger = logging.getLogger(__name__)
 
-
 NETWORK_STARTTIMES = {
     # mainnet
     764824073: 1591566291,
     # preprod
-    1: 1660003200,
-    # 1: 1654034400,
-    # preview
-    1234567: 1655683200,
+    1: 1655683200,
 }
 
 
