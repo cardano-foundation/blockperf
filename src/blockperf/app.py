@@ -8,6 +8,7 @@ import os
 import threading
 import time
 from pathlib import Path
+from prometheus_client import start_http_server, Gauge, Counter
 
 from blockperf import __version__ as blockperf_version
 from blockperf.config import AppConfig
@@ -181,6 +182,16 @@ class App:
         The
         """
 
+        start_http_server(8082) # TODO: Port should be an environment variable.
+        hdr_g = Gauge('blockperf_header_delta', 'time from when a block was forged until received (ms)')
+        b_req_g = Gauge('blockperf_block_req_delta', 'time between the header was received until the block request was sent (ms)')
+        b_rsp_g = Gauge('blockperf_block_rsp_delta', 'time between the block request was sent until the block responce was received (ms)')
+        b_adp_g = Gauge('blockperf_block_adopt_delta', 'time for adopting the block (ms)')
+        b_delay_g = Gauge('blockperf_block_delay', 'Total block delay (ms)')
+        b_no_g = Gauge('blockperf_block_no', 'Block number of latest sample')
+        v_sam_c = Counter('blockperf_valid_samples', 'valid samples collected')
+        iv_sam_c = Counter('blockperf_invalid_samples', 'invalid samples discarded')
+
         for event in self.logevents_logfile():
             # Make sure lists dont fill up
             self.ensure_maxblocks()
@@ -243,9 +254,18 @@ class App:
             # Check values are in acceptable ranges
             if not new_sample.is_sane():
                 logger.debug("Insane values for sample %s", new_sample)
+                iv_sam_c.inc()
                 continue
 
             logger.info("Sample for %s created", _block_hash_short)
+            hdr_g.set(new_sample.header_delta)
+            b_req_g.set(new_sample.block_request_delta)
+            b_rsp_g.set(new_sample.block_response_delta)
+            b_adp_g.set(new_sample.block_adopt_delta)
+            b_delay_g.set(new_sample.header_delta + new_sample.block_request_delta +
+                          new_sample.block_response_delta + new_sample.block_adopt_delta)
+            b_no_g.set(new_sample.block_num)
+            v_sam_c.inc()
 
             # The sample is ready to be published, create the payload for mqtt,
             # determine the topic and publish that sample
