@@ -12,6 +12,7 @@ from pathlib import Path
 from blockperf import __version__ as blockperf_version
 from blockperf.blocksample import BlockSample, slot_time_of
 from blockperf.config import AppConfig
+from blockperf.metrics import Metrics
 from blockperf.mqtt import MQTTClient
 from blockperf.nodelogs import LogEvent, LogEventKind
 
@@ -23,6 +24,7 @@ class App:
     node_config: dict
     mqtt_client: MQTTClient
     start_time: int
+    metrics: Metrics
 
     # holds a dictionairy for each kind of events for each block_hash
     logevents: dict = {}
@@ -35,6 +37,7 @@ class App:
         self.q: queue.Queue = queue.Queue(maxsize=50)
         self.app_config = config
         self.start_time = int(datetime.now().timestamp())
+        self.metrics = Metrics()
 
     def run(self):
         """Runs the App by creating the mqtt client and two threads.
@@ -126,7 +129,15 @@ class App:
         * logevents holds all events recorded for all hashes seen.
         * published_blocks holds hashes of all published blocks.
 
-        LogEvents hashes eventuallnetworkize, the hashes that are added first will
+        LogEvents hashes eventually get adopted (or not). But this may
+        take some time. I want to wait for some time (config.max_concurrent_blocks)
+        before i drop that hash.
+
+        Samples for blocks that already have a sample published should not get
+        republished. Thus the list of published_blocks.
+
+        To not have both lists grow indefinetly i use the deque in self.working_hashes.
+        Once it reaches a certain size, the hashes that are added first will
         get popped of and delete from the other two lists.
         """
         if len(self.working_hashes) > self.app_config.max_concurrent_blocks:
@@ -168,7 +179,6 @@ class App:
         Once that is the case a new sample is created by collecting all events
         and instanciating BlockSample(). If the sample is complete it published.
 
-        The
         """
 
         for event in self.logevents_logfile():
@@ -232,10 +242,24 @@ class App:
 
             # Check values are in acceptable ranges
             if not new_sample.is_sane():
-                logger.info("Insane values for block \n%s\n", new_sample)
+                logger.debug("Insane values for sample %s", new_sample)
+                self.metrics.inc("invalid_samples")
                 continue
 
             logger.info("Sample for %s created", _block_hash_short)
+            self.metrics.set("header_delta", new_sample.header_delta)
+            self.metrics.set("block_request_delta", new_sample.block_request_delta)
+            self.metrics.set("block_response_delta", new_sample.block_response_delta)
+            self.metrics.set("block_adopt_delta", new_sample.block_adopt_delta)
+            self.metrics.set(
+                "block_delay",
+                new_sample.header_delta
+                + new_sample.block_request_delta
+                + new_sample.block_response_delta
+                + new_sample.block_adopt_delta,
+            )
+            self.metrics.set("block_no", new_sample.block_num)
+            self.metrics.inc("valid_samples")
 
             # The sample is ready to be published, create the payload for mqtt,
             # determine the topic and publish that sample

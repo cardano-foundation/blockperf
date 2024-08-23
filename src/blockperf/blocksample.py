@@ -25,7 +25,7 @@ def slot_time_of(slot_num: int, network: int) -> datetime:
     """Calculate the timestamp that given slot should have occured.
     Works only if the networks slots are 1 second lenghts!
     """
-    logger.info("slot_time_of(%s, %s", slot_num, network)
+    logger.debug("slot_time_of(%s, %s", slot_num, network)
     if network not in NETWORK_STARTTIMES:
         raise ValueError(f"No starttime for {network} available")
 
@@ -113,7 +113,7 @@ class BlockSample:
         """Returnms first TRACE_DOWNLOADED_HEADER received"""
         for event in self.trace_events:
             if event.kind == LogEventKind.TRACE_DOWNLOADED_HEADER:
-                logger.info("Found first TraceHeader %s", event.atstr)
+                logger.debug("Found first TraceHeader %s", event.atstr)
                 return event
         return None
 
