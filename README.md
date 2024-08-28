@@ -92,6 +92,9 @@ BLOCKPERF_RELAY_PUBLIC_PORT="3001"
 # If you do not want to share certain ips of your setup, list them here and
 # blockperf will not send these out to the broker.
 BLOCKPERF_MASKED_ADDRESSES="x.x.x.x,x.x.x.x"
+
+# Optional: Specify a port number for promtheus metrics server, Defalts to disabled
+BLOCKPERF_METRICS_PORT="8082"
 ```
 
 
@@ -161,10 +164,10 @@ need to reload systemd and start the service.
 
 ```bash
 sudo systemctl daemon-reloadsudo systemctl daemon-reload
-sudo systemctl start blockperf 
+sudo systemctl start blockperf
 ```
 
-Inspect logs with 
+Inspect logs with
 
 ```bash
 journalctl -fu blockperf

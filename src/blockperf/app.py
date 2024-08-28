@@ -1,21 +1,20 @@
-import sys
 import collections
-from datetime import datetime, timezone, timedelta
 import json
 import logging
-import queue
 import os
+import queue
+import sys
 import threading
 import time
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from blockperf import __version__ as blockperf_version
-from blockperf.config import AppConfig
-
 from blockperf.blocksample import BlockSample, slot_time_of
-from blockperf.nodelogs import LogEventKind, LogEvent
+from blockperf.config import AppConfig
+from blockperf.metrics import Metrics
 from blockperf.mqtt import MQTTClient
-
+from blockperf.nodelogs import LogEvent, LogEventKind
 
 logger = logging.getLogger(__name__)
 
@@ -25,6 +24,7 @@ class App:
     node_config: dict
     mqtt_client: MQTTClient
     start_time: int
+    metrics: Metrics
 
     # holds a dictionairy for each kind of events for each block_hash
     logevents: dict = {}
@@ -37,6 +37,7 @@ class App:
         self.q: queue.Queue = queue.Queue(maxsize=50)
         self.app_config = config
         self.start_time = int(datetime.now().timestamp())
+        self.metrics = Metrics()
 
     def run(self):
         """Runs the App by creating the mqtt client and two threads.
@@ -178,7 +179,6 @@ class App:
         Once that is the case a new sample is created by collecting all events
         and instanciating BlockSample(). If the sample is complete it published.
 
-        The
         """
 
         for event in self.logevents_logfile():
@@ -233,7 +233,7 @@ class App:
             for event_kind_list in self.logevents[_block_hash].values():
                 all_events.extend(event_kind_list)
 
-            new_sample = BlockSample(all_events)
+            new_sample = BlockSample(all_events, self.app_config.network_magic)
 
             # Check BlockSample has all needed Events to produce sample
             if not new_sample.is_complete():
@@ -243,9 +243,23 @@ class App:
             # Check values are in acceptable ranges
             if not new_sample.is_sane():
                 logger.debug("Insane values for sample %s", new_sample)
+                self.metrics.inc("invalid_samples")
                 continue
 
             logger.info("Sample for %s created", _block_hash_short)
+            self.metrics.set("header_delta", new_sample.header_delta)
+            self.metrics.set("block_request_delta", new_sample.block_request_delta)
+            self.metrics.set("block_response_delta", new_sample.block_response_delta)
+            self.metrics.set("block_adopt_delta", new_sample.block_adopt_delta)
+            self.metrics.set(
+                "block_delay",
+                new_sample.header_delta
+                + new_sample.block_request_delta
+                + new_sample.block_response_delta
+                + new_sample.block_adopt_delta,
+            )
+            self.metrics.set("block_no", new_sample.block_num)
+            self.metrics.inc("valid_samples")
 
             # The sample is ready to be published, create the payload for mqtt,
             # determine the topic and publish that sample
@@ -299,7 +313,7 @@ class App:
 
         # If there is one, check its slot_time
         trace_header = trace_headers.pop(0)
-        slot_time = slot_time_of(trace_header.slot_num)
+        slot_time = slot_time_of(trace_header.slot_num, self.app_config.network_magic)
         if slot_time < datetime.now(tz=timezone.utc) - timedelta(hours=12):
             logger.info(
                 "Slot %s is too old (%s)",

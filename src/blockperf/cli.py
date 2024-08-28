@@ -1,8 +1,10 @@
 """CLI Entrypoint for blockperf"""
-import logging
-from logging.config import dictConfig
+
 import argparse
+import logging
 import sys
+from logging.config import dictConfig
+
 import psutil
 
 from blockperf.app import App

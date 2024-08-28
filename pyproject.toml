@@ -48,6 +48,7 @@ classifiers = [
 dependencies = [
   "paho-mqtt==1.6.1",
   "psutil==5.9.6",
+  "prometheus-client==0.20.0",
 ]
 
 [project.optional-dependencies] # Optional
