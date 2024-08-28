@@ -30,6 +30,7 @@
 
               propagatedBuildInputs = [
                 paho-mqtt
+                prometheus-client
                 psutil
                 setuptools
               ];
