@@ -3,6 +3,8 @@ App Configuration is done either via Environment variables or the stdlib
 configparser module.
 """
 
+import base64
+import hashlib
 import ipaddress
 import json
 import logging
@@ -43,6 +45,7 @@ class AppConfig:
             f"Node config:   {self.node_config_file}\n"
             f"Node logfile:  {self.node_logfile}\n"
             f"Client Name:   {self.name}\n"
+            f"Client ID:     {self.clientid}\n"
             f"Networkmagic:  {self.network_magic}\n"
             f"Public IP:     {self.relay_public_ip}:{self.relay_public_port}\n"
             # f"..... {blocksample.block_delay} sec\n\n"
@@ -106,6 +109,14 @@ class AppConfig:
             "NormalVerbosity",
             "MaximalVerbosity",
         ), "TracingVerbosity must be NormalVerbosity or MaximalVerbosity"
+
+    @property
+    def clientid(self) -> str:
+        certid = ""
+        with open(self.client_cert, mode="r") as f:
+            cert_string = "".join(f.readlines()[1:-1])
+            certid = hashlib.sha256(base64.b64decode(cert_string)).hexdigest()
+        return certid
 
     @property
     def broker_host(self) -> str:
