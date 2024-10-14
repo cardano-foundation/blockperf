@@ -8,6 +8,7 @@ import threading
 import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from urllib.request import urlopen
 
 from blockperf import __version__ as blockperf_version
 from blockperf.blocksample import BlockSample, slot_time_of
@@ -101,6 +102,19 @@ class App:
         )
         logger.info("\n" + msg)
 
+    def prometheus_metrics(self, endpoint) -> dict:
+        """Retrieves metrics from given endpoint and returns as dictionary"""
+        metrics = None
+        try:
+            with urlopen(endpoint) as response:
+                raw_metrics = response.read().decode()
+                metrics = {
+                    k[0]: k[1] for k in [m.split(" ") for m in raw_metrics.splitlines()]
+                }
+        except Exception as e:
+            logger.error("error retrieving metrics from prometheus: %s", e)
+        return metrics
+
     def mqtt_payload_from(self, sample: BlockSample) -> dict:
         """Returns a dictionary for use as payload when publishing the sample."""
         payload = {
@@ -122,6 +136,16 @@ class App:
             "blockLocalPort": str(self.app_config.relay_public_port),
             "blockG": str(sample.block_g),
         }
+
+        if endpoint := self.app_config.prometheus_endpoint:
+            metrics = self.prometheus_metrics(endpoint)
+            if metrics:
+                payload["inbound_governor_hot"] = metrics.get(
+                    "cardano_node_metrics_inboundGovernor_hot"
+                )
+                payload["inbound_governor_warm"] = metrics.get(
+                    "cardano_node_metrics_inboundGovernor_warm"
+                )
         return payload
 
     def ensure_maxblocks(self):
