@@ -140,11 +140,11 @@ class App:
         if endpoint := self.app_config.prometheus_endpoint:
             metrics = self.prometheus_metrics(endpoint)
             if metrics:
-                payload["inbound_governor_hot"] = metrics.get(
-                    "cardano_node_metrics_inboundGovernor_hot"
+                payload["inboundGovernor_hot"] = int(
+                    metrics.get("cardano_node_metrics_inboundGovernor_hot")
                 )
-                payload["inbound_governor_warm"] = metrics.get(
-                    "cardano_node_metrics_inboundGovernor_warm"
+                payload["inboundGovernor_warm"] = int(
+                    metrics.get("cardano_node_metrics_inboundGovernor_warm")
                 )
         return payload
 
