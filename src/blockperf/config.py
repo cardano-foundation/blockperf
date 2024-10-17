@@ -306,3 +306,15 @@ class AppConfig:
                     f"Given address {addr} is not a valid ip address"
                 ) from exc
         return validated_addresses
+
+    @property
+    def prometheus_endpoint(self) -> [str, None]:
+        has_prometheus = self.node_config.get("hasPrometheus")
+        if (
+            not has_prometheus
+            or not isinstance(has_prometheus, list)
+            or not len(has_prometheus) == 2
+            or not isinstance(has_prometheus[1], int)
+        ):
+            return None
+        return f"http://127.0.0.1:{has_prometheus[1]}/metrics"
