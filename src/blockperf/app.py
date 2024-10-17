@@ -140,12 +140,12 @@ class App:
         if endpoint := self.app_config.prometheus_endpoint:
             metrics = self.prometheus_metrics(endpoint)
             if metrics:
-                payload["inboundGovernor_hot"] = int(
-                    metrics.get("cardano_node_metrics_inboundGovernor_hot")
-                )
-                payload["inboundGovernor_warm"] = int(
-                    metrics.get("cardano_node_metrics_inboundGovernor_warm")
-                )
+                hot = metrics.get("cardano_node_metrics_inboundGovernor_hot")
+                if hot:
+                    payload["inboundGovernor_hot"] = int(hot)
+                warm = metrics.get("cardano_node_metrics_inboundGovernor_warm")
+                if warm:
+                    payload["inboundGovernor_warm"] = int(warm)
         return payload
 
     def ensure_maxblocks(self):
