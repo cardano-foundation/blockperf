@@ -52,6 +52,7 @@ class App:
                 client_keyfile=self.app_config.client_key,
                 host=self.app_config.broker_host,
                 port=self.app_config.broker_port,
+                publish=self.app_config.publish,
                 keepalive=self.app_config.broker_keepalive,
             )
 
@@ -286,22 +287,25 @@ class App:
             self.metrics.inc("valid_samples")
 
             # The sample is ready to be published, create the payload for mqtt,
-            # determine the topic and publish that sample
+            # determine the topic and publish that sample if publishing is enabled
             self.print_block_stats(new_sample)
             payload = self.mqtt_payload_from(new_sample)
             logger.debug(
                 json.dumps(payload, indent=4, sort_keys=True, ensure_ascii=False)
             )
-            topic = f"{self.app_config.topic}/{new_sample.block_hash}"
-            self.mqtt_client.publish(topic, payload)
+
+            if self.app_config.publish is True:
+                topic = f"{self.app_config.topic}/{new_sample.block_hash}"
+                self.mqtt_client.publish(topic, payload)
 
             self.published_blocks.append(_block_hash)
             logger.info(
-                "LogEvents for %s blocks - Working on %s blocks, Published %s samples ",
+                f"LogEvents for %s blocks - Working on %s blocks, {'Published' if self.app_config.publish is True else 'skipped Publishing'} %s samples ",
                 len(self.logevents.keys()),
                 len(self.working_hashes),
                 len(self.published_blocks),
             )
+
 
     def get_real_node_logfile(self) -> Path:
         """Return the path to the logfile that node.log points to"""

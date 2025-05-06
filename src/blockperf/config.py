@@ -24,6 +24,7 @@ class ConfigError(Exception):
 BROKER_HOST = "a12j2zhynbsgdv-ats.iot.eu-central-1.amazonaws.com"
 BROKER_PORT = 8883
 BROKER_KEEPALIVE = 180
+PUBLISH = "True"
 ROOTDIR = Path(__file__).parent
 
 
@@ -42,6 +43,7 @@ class AppConfig:
         self.check_blockperf_config()
         msg = (
             f"\n----------------------------------------------------\n"
+            f"Publish:       {self.publish}\n"
             f"Node config:   {self.node_config_file}\n"
             f"Node logfile:  {self.node_logfile}\n"
             f"Client Name:   {self.name}\n"
@@ -73,25 +75,26 @@ class AppConfig:
             logger.error("Node logdir '%s' does not exist", self.node_logdir)
             sys.exit()
 
-        if not self.name:
-            logger.error("NAME is not set")
-            sys.exit()
+        if self.publish is True:
+            if not self.name:
+                logger.error("NAME is not set")
+                sys.exit()
 
-        if not self.relay_public_ip:
-            logger.error("RELAY_PUBLIC_IP is not set")
-            sys.exit()
+            if not self.relay_public_ip:
+                logger.error("RELAY_PUBLIC_IP is not set")
+                sys.exit()
 
-        if not Path(self.client_cert).exists():
-            logger.error("Client cert '%s' does not exist", self.client_cert)
-            sys.exit()
+            if not Path(self.client_cert).exists():
+                logger.error("Client cert '%s' does not exist", self.client_cert)
+                sys.exit()
 
-        if not Path(self.client_key).exists():
-            logger.error("Client key '%s' does not exist", self.client_key)
-            sys.exit()
+            if not Path(self.client_key).exists():
+                logger.error("Client key '%s' does not exist", self.client_key)
+                sys.exit()
 
-        if not Path(self.amazon_ca).exists():
-            logger.error("Amazon CA '%s' does not exist", self.amazon_ca)
-            sys.exit()
+            if not Path(self.amazon_ca).exists():
+                logger.error("Amazon CA '%s' does not exist", self.amazon_ca)
+                sys.exit()
 
         if self.active_slot_coef <= 0.0:
             logger.error("Could not retrieve active_slot_coef")
@@ -112,11 +115,14 @@ class AppConfig:
 
     @property
     def clientid(self) -> str:
-        certid = ""
-        with open(self.client_cert, mode="r") as f:
-            cert_string = "".join(f.readlines()[1:-1])
-            certid = hashlib.sha256(base64.b64decode(cert_string)).hexdigest()
-        return certid
+        if self.publish is True:
+            certid = ""
+            with open(self.client_cert, mode="r") as f:
+                cert_string = "".join(f.readlines()[1:-1])
+                certid = hashlib.sha256(base64.b64decode(cert_string)).hexdigest()
+            return certid
+        else:
+            return ""
 
     @property
     def broker_host(self) -> str:
@@ -141,6 +147,18 @@ class AppConfig:
             ),
         )
         return int(broker_port)
+
+    @property
+    def publish(self) -> bool:
+        publish = os.getenv(
+            "BLOCKPERF_PUBLISH",
+            self.config_parser.get(
+                "DEFAULT",
+                "publish",
+                fallback=PUBLISH,
+            ),
+        )
+        return publish == "True"
 
     @property
     def broker_keepalive(self) -> int:
