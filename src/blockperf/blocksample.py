@@ -18,6 +18,8 @@ NETWORK_STARTTIMES = {
     764824073: 1591566291,
     # preprod
     1: 1655683200,
+    # preview
+    2: 1666656000,
 }
 
 
