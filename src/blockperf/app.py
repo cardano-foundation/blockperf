@@ -202,7 +202,7 @@ class App:
         to test if all required LogEvents have been collected yet.
 
         Once that is the case a new sample is created by collecting all events
-        and instanciating BlockSample(). If the sample is complete it published.
+        and instantiating BlockSample(). If the sample is complete it published.
 
         """
 
@@ -365,7 +365,6 @@ class App:
         seek_file = True
         while True:
             real_node_log = self.get_real_node_logfile()
-            lines_read = 0
             with open(real_node_log, "r", 1, "utf-8") as fp:
                 logger.info("Opened %s", real_node_log)
                 # Avoid reading through old node.log on fresh start
@@ -374,13 +373,16 @@ class App:
                     fp.seek(0, 2)
                     seek_file = False
                 while True:
-                    new_lines = fp.readlines()
+                    new_lines = [l.strip('\n') for l in fp.readlines() if l != '\n']
                     # Create logevents from lines
                     logevents = map(
                         lambda line: LogEvent.from_logline(
-                            line, self.app_config.masked_addresses, self.start_time
+                            line,
+                            self.app_config.legacy_tracing,
+                            self.app_config.masked_addresses,
+                            self.start_time,
                         ),
-                        new_lines,
+                        new_lines
                     )
                     # Filter out None's
                     logevents = [event for event in logevents if event is not None]

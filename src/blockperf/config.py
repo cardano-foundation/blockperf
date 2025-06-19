@@ -103,17 +103,20 @@ class AppConfig:
             sys.exit()
 
         # Check for needed config values
-        assert self.node_config.get(
-            "TraceChainSyncClient", False
-        ), "TraceChainSyncClient not enabled"
-        assert self.node_config.get(
-            "TraceBlockFetchClient", False
-        ), "TraceBlockFetchClient not enabled"
-        # What are the other possible values? This should allow everything that is above Normal
-        assert self.node_config.get("TracingVerbosity", "") in (
-            "NormalVerbosity",
-            "MaximalVerbosity",
-        ), "TracingVerbosity must be NormalVerbosity or MaximalVerbosity"
+        if self.legacy_tracing:
+            assert self.node_config.get(
+                "TraceChainSyncClient", False
+            ), "TraceChainSyncClient not enabled"
+
+            assert self.node_config.get(
+                "TraceBlockFetchClient", False
+            ), "TraceBlockFetchClient not enabled"
+
+            # What are the other possible values? This should allow everything that is above Normal
+            assert self.node_config.get("TracingVerbosity", "") in (
+                "NormalVerbosity",
+                "MaximalVerbosity",
+            ), "TracingVerbosity must be NormalVerbosity or MaximalVerbosity"
 
     @property
     def clientid(self) -> str:

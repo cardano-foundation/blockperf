@@ -3,7 +3,7 @@
 
 import json
 import logging
-import sys
+import re
 from datetime import datetime, timedelta, timezone
 from enum import Enum
 from typing import Union
@@ -90,7 +90,7 @@ class LogEventKind(Enum):
 class LogEvent:
     """A LogEvent represents a single line in the nodes log file.
 
-    TraceDownloadedHeader
+    DownloadedHeader or TraceDownloadedHeader (legacy tracing)
     A (new) Header was announced (downloaded) to the node. Emitted each time a
     header is received from any given peer. We are mostly interested in the
     time the first header of any given Block was received (announced).
@@ -126,13 +126,23 @@ class LogEvent:
     remote_addr: str
     remote_port: str
 
-    def __init__(self, event_data: dict) -> None:
+    def __init__(self, event_data: dict, legacy_tracing: bool) -> None:
         """Create a LogEvent with `from_logline` method by passing in the json string
         as written to the nodes log."""
 
+        # Parse datetime string from either micro or nanoseconds with TZ offset
         if _at := event_data.get("at", None):
-            self.at = datetime.strptime(_at, "%Y-%m-%dT%H:%M:%S.%f%z")
+            if legacy_tracing:
+                self.at = datetime.strptime(_at, "%Y-%m-%dT%H:%M:%S.%f%z")
+            else:
+                # Nanoseconds logging is variable length
+                dt, suffix = _at.split(".")
+                if match := re.match(r'^(\d+)(\D.*)', suffix):
+                    ns, tz = match.groups()
+                    usec = ns[:6]
+                    self.at = datetime.strptime(f"{dt}.{usec}{tz}", "%Y-%m-%dT%H:%M:%S.%f%z")
 
+        # Truncate from micro to milliseconds
         if hasattr(self, "at"):
             self.atstr = self.at.strftime("%Y-%m-%d %H:%M:%S,%f")[:-3]
 
@@ -183,6 +193,7 @@ class LogEvent:
     def from_logline(
         cls,
         logline: str,
+        legacy_tracing: bool,
         masked_addresses: list = [],
         bad_before: Union[int, None] = None,
     ) -> Union["LogEvent", None]:
@@ -199,7 +210,7 @@ class LogEvent:
         _event = None
         try:
             json_data = json.loads(logline)
-            _event = cls(json_data)
+            _event = cls(json_data, legacy_tracing)
         except json.decoder.JSONDecodeError:
             logger.error("Invalid JSON %s", logline)
             return None
