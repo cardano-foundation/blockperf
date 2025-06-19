@@ -213,12 +213,6 @@ class AppConfig:
     def node_logfile(self) -> Union[Path, None]:
         """Node logfile from env variable or read
         Idealy this would look into the config to determine the logfile from there
-
-        e.g.:
-        for ss in self.node_config.get("setupScribes", []):
-           if ss.get("scFormat") == "ScJson" and ss.get("scKind") == "FileSK":
-               node_logfile = Path(ss.get("scName"))
-               break
         """
         node_logfile = os.getenv("BLOCKPERF_NODE_LOGFILE", None)
         if not node_logfile:

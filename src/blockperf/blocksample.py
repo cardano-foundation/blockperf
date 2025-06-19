@@ -1,14 +1,7 @@
-# import json
-# import sys
-# from enum import Enum
 import logging
 from datetime import datetime, timezone
 from typing import Union
-
-from blockperf import __version__ as blockperf_version
-
-# from blockperf.config import AppConfig
-from blockperf.nodelogs import LogEvent, LogEventKind
+from blockperf.nodelogs import LogEvent, LogEventKind, LogEventNs
 
 # logging.basicConfig(level=logging.DEBUG, format="(%(threadName)-9s) %(message)s")
 logger = logging.getLogger(__name__)
@@ -24,10 +17,10 @@ NETWORK_STARTTIMES = {
 
 
 def slot_time_of(slot_num: int, network: int) -> datetime:
-    """Calculate the timestamp that given slot should have occured.
-    Works only if the networks slots are 1 second lenghts!
+    """Calculate the timestamp that given slot should have occurred.
+    Works only if the networks slots are 1 second lengths!
     """
-    logger.debug("slot_time_of(%s, %s", slot_num, network)
+    logger.debug("slot_time_of(%s, %s)", slot_num, network)
     if network not in NETWORK_STARTTIMES:
         raise ValueError(f"No starttime for {network} available")
 
@@ -79,11 +72,12 @@ class BlockSample:
 
     trace_events: list = []
 
-    def __init__(self, events: list, network_magic: int) -> None:
+    def __init__(self, events: list, network_magic: int, legacy_tracing: bool = True) -> None:
         """Creates LogEvent and orders the events by at field"""
         events.sort(key=lambda x: x.at)
         self.trace_events = events
         self.network_magic = network_magic
+        self.legacy_tracing = legacy_tracing
 
     def __str__(self):
         """ """
@@ -112,9 +106,12 @@ class BlockSample:
 
     @property
     def first_trace_header(self) -> Union[LogEvent, None]:
-        """Returnms first TRACE_DOWNLOADED_HEADER received"""
+        """Returns first DOWNLOADED_HEADER received"""
         for event in self.trace_events:
-            if event.kind == LogEventKind.TRACE_DOWNLOADED_HEADER:
+            if (
+                self.legacy_tracing and event.kind == LogEventKind.DOWNLOADED_HEADER
+                or not self.legacy_tracing and event.ns == LogEventNs.DOWNLOADED_HEADER
+            ):
                 logger.debug("Found first TraceHeader %s", event.atstr)
                 return event
         return None
@@ -123,7 +120,10 @@ class BlockSample:
     def first_completed_block(self) -> Union[LogEvent, None]:
         """Returns first COMPLETED_BLOCK_FETCH received"""
         for event in self.trace_events:
-            if event.kind == LogEventKind.COMPLETED_BLOCK_FETCH:
+            if (
+                self.legacy_tracing and event.kind == LogEventKind.COMPLETED_BLOCK_FETCH
+                or not self.legacy_tracing and event.ns == LogEventNs.COMPLETED_BLOCK_FETCH
+            ):
                 return event
         return None
 
@@ -133,7 +133,7 @@ class BlockSample:
         if not (fcb := self.first_completed_block):
             return None
         for event in filter(
-            lambda x: x.kind == LogEventKind.SEND_FETCH_REQUEST, self.trace_events
+            lambda x: x.kind == LogEventKind.SEND_FETCH_REQUEST if self.legacy_tracing else x.ns == LogEventNs.SEND_FETCH_REQUEST, self.trace_events
         ):
             if (
                 event.remote_addr == fcb.remote_addr
@@ -144,11 +144,11 @@ class BlockSample:
 
     @property
     def block_adopt(self) -> Union[LogEvent, None]:
-        """Return TraceEvent that this block was adopted with"""
+        """Return the event that this block was adopted with"""
         for event in self.trace_events:
-            if event.kind in (
-                LogEventKind.ADDED_TO_CURRENT_CHAIN,
-                LogEventKind.SWITCHED_TO_A_FORK,
+            if (
+                self.legacy_tracing and event.kind in (LogEventKind.ADDED_TO_CURRENT_CHAIN, LogEventKind.SWITCHED_TO_A_FORK)
+                or not self.legacy_tracing and event.ns in (LogEventNs.ADDED_TO_CURRENT_CHAIN, LogEventNs.SWITCHED_TO_A_FORK)
             ):
                 return event
         return None

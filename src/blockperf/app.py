@@ -15,7 +15,7 @@ from blockperf.blocksample import BlockSample, slot_time_of
 from blockperf.config import AppConfig
 from blockperf.metrics import Metrics
 from blockperf.mqtt import MQTTClient
-from blockperf.nodelogs import LogEvent, LogEventKind
+from blockperf.nodelogs import LogEvent, LogEventKind, LogEventNs
 
 logger = logging.getLogger(__name__)
 
@@ -185,7 +185,7 @@ class App:
         some are of interest.
 
             * Must be of a specific kind
-                TRACE_DOWNLOADED_HEADER, SEND_FETCH_REQUEST, COMPLETED_BLOCK_FETCH,
+                DOWNLOADED_HEADER, SEND_FETCH_REQUEST, COMPLETED_BLOCK_FETCH,
                 ADDED_TO_CURRENT_CHAIN, SWITCHED_TO_A_FORK
             * Must not be too old (invalid)
             * Must have a blockhash
@@ -193,11 +193,11 @@ class App:
 
         A sample can only be created if all the required LogEvents have been
         recorded for that given block. All required LogEvents means that
-        for each hash there must at least be one TRACE_DOWNLOADED_HEADER, one SEND_FETCH_REQUEST
+        for each hash there must at least be one DOWNLOADED_HEADER, one SEND_FETCH_REQUEST
         and one COMPLETED_BLOCK_FETCH as well es one of the two possible adoption
         kinds which are ADDED_TO_CURRENT_CHAIN and SWITCHED_TO_A_FORK.
 
-        To make that test somewhat simple there self.logevents holds all events
+        To make that test somewhat simple the self.logevents holds all events
         in dictionaries for their respective types. That makes it rather simple
         to test if all required LogEvents have been collected yet.
 
@@ -221,11 +221,16 @@ class App:
             if _block_hash not in self.working_hashes:
                 self.working_hashes.append(_block_hash)
 
-            # All events recoreded are stored in different lists based
-            # on the event kind within logevents
-            if event.kind not in self.logevents[_block_hash]:
-                self.logevents[_block_hash][event.kind] = []
-            self.logevents[_block_hash][event.kind].append(event)
+            # All events recorded are stored in different lists based
+            # on the event namespace or kind within logevents
+            if self.app_config.legacy_tracing:
+                if event.kind not in self.logevents[_block_hash]:
+                    self.logevents[_block_hash][event.kind] = []
+                self.logevents[_block_hash][event.kind].append(event)
+            else:
+                if event.ns not in self.logevents[_block_hash]:
+                    self.logevents[_block_hash][event.ns] = []
+                self.logevents[_block_hash][event.ns].append(event)
             logger.debug(event)
 
             # Do not event try to republish
@@ -235,17 +240,24 @@ class App:
 
             # Check that all needed events are recorded for current _block_hash
             if not (
-                LogEventKind.TRACE_DOWNLOADED_HEADER
-                in self.logevents[_block_hash].keys()
-                and LogEventKind.SEND_FETCH_REQUEST
-                in self.logevents[_block_hash].keys()
-                and LogEventKind.COMPLETED_BLOCK_FETCH
-                in self.logevents[_block_hash].keys()
-                and (
-                    LogEventKind.ADDED_TO_CURRENT_CHAIN
-                    in self.logevents[_block_hash].keys()
-                    or LogEventKind.SWITCHED_TO_A_FORK
-                    in self.logevents[_block_hash].keys()
+                (
+                    self.app_config.legacy_tracing
+                    and LogEventKind.DOWNLOADED_HEADER in self.logevents[_block_hash].keys()
+                    and LogEventKind.SEND_FETCH_REQUEST in self.logevents[_block_hash].keys()
+                    and LogEventKind.COMPLETED_BLOCK_FETCH in self.logevents[_block_hash].keys()
+                    and (
+                        LogEventKind.ADDED_TO_CURRENT_CHAIN in self.logevents[_block_hash].keys()
+                        or LogEventKind.SWITCHED_TO_A_FORK in self.logevents[_block_hash].keys()
+                    )
+                ) or (
+                    not self.app_config.legacy_tracing
+                    and LogEventNs.DOWNLOADED_HEADER in self.logevents[_block_hash].keys()
+                    and LogEventNs.SEND_FETCH_REQUEST in self.logevents[_block_hash].keys()
+                    and LogEventNs.COMPLETED_BLOCK_FETCH in self.logevents[_block_hash].keys()
+                    and (
+                        LogEventNs.ADDED_TO_CURRENT_CHAIN in self.logevents[_block_hash].keys()
+                        or LogEventNs.SWITCHED_TO_A_FORK in self.logevents[_block_hash].keys()
+                    )
                 )
             ):
                 logger.debug(
@@ -258,7 +270,7 @@ class App:
             for event_kind_list in self.logevents[_block_hash].values():
                 all_events.extend(event_kind_list)
 
-            new_sample = BlockSample(all_events, self.app_config.network_magic)
+            new_sample = BlockSample(all_events, self.app_config.network_magic, self.app_config.legacy_tracing)
 
             # Check BlockSample has all needed Events to produce sample
             if not new_sample.is_complete():
@@ -326,13 +338,14 @@ class App:
                 time.sleep(2)
 
     def slot_is_too_old(self, logevents: list) -> bool:
-        """Given a list of logevents it finds the TraceDownloadedHeader event
+        """Given a list of logevents it finds the DownloadedHeader event
         and determines whether the current slot_num is too old for us.
         """
         trace_headers = [
             event
             for event in logevents
-            if event.kind == LogEventKind.TRACE_DOWNLOADED_HEADER
+            if self.app_config.legacy_tracing and event.kind == LogEventKind.DOWNLOADED_HEADER
+                or not self.app_config.legacy_tracing and event.ns == LogEventNs.DOWNLOADED_HEADER
         ]
 
         # Without TraceHeaders we cant even calcualte the slot_time
@@ -378,9 +391,9 @@ class App:
                     logevents = map(
                         lambda line: LogEvent.from_logline(
                             line,
-                            self.app_config.legacy_tracing,
                             self.app_config.masked_addresses,
                             self.start_time,
+                            self.app_config.legacy_tracing,
                         ),
                         new_lines
                     )

@@ -91,7 +91,7 @@ def empty_sample():
 def test_first_trace_header(sample01, empty_sample):
     assert not empty_sample.first_trace_header
     assert sample01.first_trace_header
-    assert sample01.first_trace_header.kind == LogEventKind.TRACE_DOWNLOADED_HEADER
+    assert sample01.first_trace_header.kind == LogEventKind.DOWNLOADED_HEADER
 
 
 def test_first_completed_block(sample01, empty_sample):
