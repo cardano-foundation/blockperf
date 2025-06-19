@@ -24,6 +24,7 @@ class ConfigError(Exception):
 BROKER_HOST = "a12j2zhynbsgdv-ats.iot.eu-central-1.amazonaws.com"
 BROKER_PORT = 8883
 BROKER_KEEPALIVE = 180
+LEGACY_TRACING = "True"
 PUBLISH = "True"
 ROOTDIR = Path(__file__).parent
 
@@ -43,13 +44,14 @@ class AppConfig:
         self.check_blockperf_config()
         msg = (
             f"\n----------------------------------------------------\n"
-            f"Publish:       {self.publish}\n"
-            f"Node config:   {self.node_config_file}\n"
-            f"Node logfile:  {self.node_logfile}\n"
-            f"Client Name:   {self.name}\n"
-            f"Client ID:     {self.clientid}\n"
-            f"Networkmagic:  {self.network_magic}\n"
-            f"Public IP:     {self.relay_public_ip}:{self.relay_public_port}\n"
+            f"Publish:         {self.publish}\n"
+            f"Legacy Tracing:  {self.legacy_tracing}\n"
+            f"Node config:     {self.node_config_file}\n"
+            f"Node logfile:    {self.node_logfile}\n"
+            f"Client Name:     {self.name}\n"
+            f"Client ID:       {self.clientid}\n"
+            f"Networkmagic:    {self.network_magic}\n"
+            f"Public IP:       {self.relay_public_ip}:{self.relay_public_port}\n"
             # f"..... {blocksample.block_delay} sec\n\n"
             f"----------------------------------------------------\n\n"
         )
@@ -159,6 +161,18 @@ class AppConfig:
             ),
         )
         return publish == "True"
+
+    @property
+    def legacy_tracing(self) -> bool:
+        legacy_tracing = os.getenv(
+            "BLOCKPERF_LEGACY_TRACING",
+            self.config_parser.get(
+                "DEFAULT",
+                "legacy_tracing",
+                fallback=LEGACY_TRACING,
+            ),
+        )
+        return legacy_tracing == "True"
 
     @property
     def broker_keepalive(self) -> int:
