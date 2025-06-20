@@ -16,10 +16,10 @@ OPS & Infrastructure team to receive a openssl client certificate.
 This certificate is needed to authenticate to the mqtt broker service. Most valuable
 are nodes located in geographically remote locations or outside hotspots.
 
-## Configuring the cardano-node
+## Configuring the cardano-node with the legacy tracing system
 
 For blockperf to work the node config needs to have the following configured.
-Keep in mind, the path is your choice. Its only important that you then later
+Keep in mind, the path is your choice. It's only important that you then later
 tell blockperf the same where to find them.
 
 * Make the node log to a json file
@@ -48,6 +48,75 @@ tell blockperf the same where to find them.
 "TraceBlockFetchClient": true,
 ```
 
+## Configuring the cardano-node with the new tracing system
+
+Similar to the above section using cardano-node with the legacy tracing system,
+for blockperf to work with the new tracing system, the node config needs to
+have the following configured.
+
+* Make the node log to a json file by including at least `Forwarder` in the
+backends, and the following five specific tracers:
+
+```json
+"UseTraceDispatcher": true,
+"TraceOptions": {
+  "": {
+    "backends": [
+      "Forwarder",
+    ],
+  },
+  "BlockFetch.Client.CompletedBlockFetch": {
+    "details": "DNormal",
+    "maxFrequency": 0.0,
+    "severity": "Info"
+  },
+  "BlockFetch.Client.SendFetchRequest": {
+    "details": "DNormal",
+    "maxFrequency": 0.0,
+    "severity": "Info"
+  },
+  "ChainDb.AddBlockEvent.AddedToCurrentChain": {
+    "details": "DNormal",
+    "maxFrequency": 0.0,
+    "severity": "Info"
+  },
+  "ChainDb.AddBlockEvent.SwitchedToAFork": {
+    "details": "DNormal",
+    "maxFrequency": 0.0,
+    "severity": "Info"
+  },
+  "ChainSync.Client.DownloadedHeader": {
+    "details": "DNormal",
+    "maxFrequency": 0.0,
+    "severity": "Info"
+  }
+}
+```
+
+* Make cardano-tracer log the forwarded output it receives from cardano-node to
+a file which blockperf can follow and parse by including logging and rotation
+declarations in cardano-tracer's config:
+
+```json
+"logging": [
+  {
+    "logFormat": "ForMachine",
+    "logMode": "FileMode",
+    "logRoot": "/opt/cardano/cnode/logs"
+  }
+],
+"rotation": {
+  "rpFrequencySecs": 60,
+  "rpKeepFilesNum": 14,
+  "rpLogLimitBytes": 10000000,
+  "rpMaxAgeHours": 24
+}
+```
+
+* Note that the logRoot example above is `/opt/cardano/cnode/logs`, and the actual file
+blockperf will need to parse will be `/opt/cardano/cnode/logs/$HOSTNAME/node.json`.
+
+
 ## Configuring blockperf
 
 Blockperf needs access to the nodes config file. It also needs to know the file
@@ -64,8 +133,8 @@ With the certificate you will also receive a "client identifier" or name. This n
 is also part of the certificate and is needed to properly authenticate and more
 importantly publish message to a specific mqtt topic.
 
-To send the data blockperf also kneeds to know the public IP Address (and Port)
-whith which that relay is being accessed over. The IP adress will be send
+To send the data blockperf also needs to know the public IP Address (and Port)
+whith which that relay is being accessed over. The IP address will be send
 along with the other data. If you do not want that you can specify a list of
 addresses that you never want to disclose.
 
@@ -77,6 +146,10 @@ in a file `/etc/default/blockperf` and reference that from the systemd unit.
 # Your cardano-node's config and logfiles.
 BLOCKPERF_NODE_CONFIG="/opt/cardano/cnode/files/config.json"
 BLOCKPERF_NODE_LOGFILE="/opt/cardano/cnode/logs/node.json"
+
+# If you are using the new tracing system, the logfile is passed as
+# cardano-tracer logRoot with hostname and node.json file appended:
+# BLOCKPERF_NODE_LOGFILE="/opt/cardano/cnode/logs/$HOSTNAME/node.json"
 
 # X.509 client certificate, key and signing CA
 BLOCKPERF_CLIENT_CERT="XXX" # path to client certificate
@@ -93,8 +166,14 @@ BLOCKPERF_RELAY_PUBLIC_PORT="3001"
 # blockperf will not send these out to the broker.
 BLOCKPERF_MASKED_ADDRESSES="x.x.x.x,x.x.x.x"
 
-# Optional: Specify a port number for promtheus metrics server, Defalts to disabled
+# Optional: Specify a port number for prometheus metrics server, defaults to disabled
 BLOCKPERF_METRICS_PORT="8082"
+
+# Optional: Can be used to disable publishing for temporary machines or testnets, defaults to True
+BLOCKPERF_PUBLISH="True"
+
+# Optional: Can be used to switch to new node tracing system, defaults to True
+BLOCKPERF_LEGACY_TRACING="True"
 ```
 
 
@@ -180,17 +259,17 @@ installed in it. Have a look into it and build your image. You would then
 need to find a way to provide all the files we discussed above into the container.
 
 The most straight forward example might be using bind mounts with a docker run
-call similar to this. All your paths obviosuly need to be adopted to match your
+call similar to this. All your paths obviously need to be adopted to match your
 environment. Keep in mind: The paths you specify in the environment variables
 must match the environment the process sees within the container.
 
 ```bash
-  docker run -it --env-file blockperf.env                                                         \
-		--mount type=bind,source=/opt/cardano/cnode/files/config.json,target=/opt/cardano/config.json \
-		--mount type=bind,source=/opt/cardano/cnode/logs/node.json,target=/opt/cardano/logs/node.json \
-		--mount type=bind,source=/etc/blockperf/client.pem,target=/opt/cardano/client.pem             \
-		--mount type=bind,source=/etc/blockperf/client.key,target=/opt/cardano/client.key             \
-		--mount type=bind,source=/etc/blockperf/amazonca.pem,target=/opt/cardano/amazonca.pem         \
-		--mount type=bind,source=/opt/cardano/cnode/files/shelley-genesis.json,target=/opt/cardano/shelley-genesis.json \
-		blockperf blockperf run
+docker run -it --env-file blockperf.env                                                                           \
+  --mount type=bind,source=/opt/cardano/cnode/files/config.json,target=/opt/cardano/config.json                   \
+  --mount type=bind,source=/opt/cardano/cnode/logs/node.json,target=/opt/cardano/logs/node.json                   \
+  --mount type=bind,source=/etc/blockperf/client.pem,target=/opt/cardano/client.pem                               \
+  --mount type=bind,source=/etc/blockperf/client.key,target=/opt/cardano/client.key                               \
+  --mount type=bind,source=/etc/blockperf/amazonca.pem,target=/opt/cardano/amazonca.pem                           \
+  --mount type=bind,source=/opt/cardano/cnode/files/shelley-genesis.json,target=/opt/cardano/shelley-genesis.json \
+  blockperf blockperf run
 ```
