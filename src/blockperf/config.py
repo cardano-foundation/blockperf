@@ -117,6 +117,91 @@ class AppConfig:
                 "NormalVerbosity",
                 "MaximalVerbosity",
             ), "TracingVerbosity must be NormalVerbosity or MaximalVerbosity"
+        else:
+            def checkCfg(target, level, inheritPath, cfg):
+                details = cfg.get("details", None)
+                maxFrequency = cfg.get("maxFrequency", None)
+                severity = cfg.get("severity", None)
+
+                error = False
+
+                if details not in ["DNormal", "DDetailed", "DMaximum"]:
+                    logger.error(f"For tracer '{target}' the {level} was found, but details of '{details}' is not DNormal, DDetailed, DMaximum")
+                    error = True
+
+                if maxFrequency not in [0, None]:
+                    logger.error(f"For tracer '{target}' the {level} was found, but maxFrequency of '{maxFrequency}' is not 0.0 or undeclared")
+                    error = True
+
+                if severity not in ["Info", "Debug"]:
+                    logger.error(f"For tracer '{target}' the {level} was found, but severity of '{severity}' is not Info or Debug")
+                    error = True
+
+                if level != "target":
+                    logger.warning(f"Ideal config for TraceOptions tracer '{target}' is to declare it rather than inherit from {level} of '{inheritPath}' with:")
+                    logger.warning(f'{{"{target}":{{"details":"DNormal","maxFrequency":0.0,"severity":"Info"}}')
+                elif error:
+                    logger.error(f"Ideal config for TraceOptions tracer '{target}' is to declare it explicitly with:")
+                    logger.error(f'{{"{target}":{{"details":"DNormal","maxFrequency":0.0,"severity":"Info"}}')
+
+                if error:
+                    sys.exit()
+
+            requiredTraceOptions = [
+                "BlockFetch.Client.CompletedBlockFetch",
+                "BlockFetch.Client.SendFetchRequest",
+                "ChainDb.AddBlockEvent.AddedToCurrentChain",
+                "ChainDb.AddBlockEvent.SwitchedToAFork",
+                "ChainSync.Client.DownloadedHeader"
+            ]
+
+            if self.node_config.get("UseTraceDispatcher", {}) != True:
+                logger.error('The legacy tracing system appears to be in use as "UseTraceDispatcher" is not declared true')
+                logger.error('Please adjust your node configuration or the BLOCKPERF_LEGACY_TRACING environment var and try again')
+                sys.exit()
+
+            cfg = self.node_config.get("TraceOptions", {})
+
+            # Given that default values for node tracer config may drift over
+            # time, let's depend on explicit node config to verify expected
+            # functionality.
+            if not cfg:
+                logger.error("TraceOptions are empty in the node config")
+                logger.error("A 'Forwarder' backend is required to log to file")
+                logger.error("TraceOptions tracer declarations also required are:")
+                logger.error(" ".join(requiredTraceOptions))
+                sys.exit()
+
+            root = cfg.get("", {})
+
+            if "Forwarder" not in root.get("backends", []):
+                logger.warning("A 'Forwarder' is not defined in the 'TraceOptions.\"\".backends' list")
+                logger.warning("In this case, an explicit 'Forwarder' backend will need to be declared or inherited to each required tracer:")
+                logger.warning(" ".join(requiredTraceOptions))
+
+            for tracer in requiredTraceOptions:
+                parent = ".".join(tracer.split('.')[0:2])
+                grandparent = tracer.split('.')[0]
+
+                if tCfg := cfg.get(tracer, {}):
+                    logger.info(f"Found tracer {tracer}")
+                    checkCfg(tracer, "target", tracer, tCfg)
+
+                elif pCfg := cfg.get(parent, {}):
+                    logger.info(f"Found tracer parent {parent}")
+                    checkCfg(tracer, "parent", parent, pCfg)
+
+                elif gCfg := cfg.get(grandparent, {}):
+                    logger.info(f"Found tracer grandparent {grandparent}")
+                    checkCfg(tracer, "grandparent", grandparent, gCfg)
+
+                elif root:
+                    logger.info(f"Found tracer root {root}:")
+                    checkCfg(tracer, "root", '""', root)
+
+                else:
+                    logger.error(f"Tracer '{tracer}' not found explictly or implicitly via inheritence, please declare it")
+                    sys.exit()
 
     @property
     def clientid(self) -> str:
