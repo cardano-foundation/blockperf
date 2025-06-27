@@ -150,8 +150,8 @@ class AppConfig:
             requiredTraceOptions = [
                 "BlockFetch.Client.CompletedBlockFetch",
                 "BlockFetch.Client.SendFetchRequest",
-                "ChainDb.AddBlockEvent.AddedToCurrentChain",
-                "ChainDb.AddBlockEvent.SwitchedToAFork",
+                "ChainDB.AddBlockEvent.AddedToCurrentChain",
+                "ChainDB.AddBlockEvent.SwitchedToAFork",
                 "ChainSync.Client.DownloadedHeader"
             ]
 

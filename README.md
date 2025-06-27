@@ -75,12 +75,12 @@ backends, and the following five specific tracers:
     "maxFrequency": 0.0,
     "severity": "Info"
   },
-  "ChainDb.AddBlockEvent.AddedToCurrentChain": {
+  "ChainDB.AddBlockEvent.AddedToCurrentChain": {
     "details": "DNormal",
     "maxFrequency": 0.0,
     "severity": "Info"
   },
-  "ChainDb.AddBlockEvent.SwitchedToAFork": {
+  "ChainDB.AddBlockEvent.SwitchedToAFork": {
     "details": "DNormal",
     "maxFrequency": 0.0,
     "severity": "Info"
