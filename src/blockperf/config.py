@@ -104,6 +104,11 @@ class AppConfig:
 
         # Check for needed config values
         if self.legacy_tracing:
+            if self.node_config.get("UseTraceDispatcher", {}) != False:
+                logger.error('The legacy tracing system does not appear to be in use as "UseTraceDispatcher" is not declared false')
+                logger.error('Please adjust your node configuration or the BLOCKPERF_LEGACY_TRACING environment var and try again')
+                sys.exit()
+
             assert self.node_config.get(
                 "TraceChainSyncClient", False
             ), "TraceChainSyncClient not enabled"
@@ -155,8 +160,8 @@ class AppConfig:
                 "ChainSync.Client.DownloadedHeader"
             ]
 
-            if self.node_config.get("UseTraceDispatcher", {}) != True:
-                logger.error('The legacy tracing system appears to be in use as "UseTraceDispatcher" is not declared true')
+            if self.node_config.get("UseTraceDispatcher", {}) == False:
+                logger.error('The legacy tracing system appears to be in use as "UseTraceDispatcher" is declared false')
                 logger.error('Please adjust your node configuration or the BLOCKPERF_LEGACY_TRACING environment var and try again')
                 sys.exit()
 
