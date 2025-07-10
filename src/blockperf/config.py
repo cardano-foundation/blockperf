@@ -104,18 +104,22 @@ class AppConfig:
 
         # Check for needed config values
         if self.legacy_tracing:
-            if self.node_config.get("UseTraceDispatcher", {}) != False:
-                logger.error('The legacy tracing system does not appear to be in use as "UseTraceDispatcher" is not declared false')
-                logger.error('Please adjust your node configuration or the BLOCKPERF_LEGACY_TRACING environment var and try again')
+            if self.node_config.get("UseTraceDispatcher", {}) != False:  # noqa: E712
+                logger.error(
+                    'The legacy tracing system does not appear to be in use as "UseTraceDispatcher" is not declared false'
+                )
+                logger.error(
+                    "Please adjust your node configuration or the BLOCKPERF_LEGACY_TRACING environment var and try again"
+                )
                 sys.exit()
 
-            assert self.node_config.get(
-                "TraceChainSyncClient", False
-            ), "TraceChainSyncClient not enabled"
+            assert self.node_config.get("TraceChainSyncClient", False), (
+                "TraceChainSyncClient not enabled"
+            )
 
-            assert self.node_config.get(
-                "TraceBlockFetchClient", False
-            ), "TraceBlockFetchClient not enabled"
+            assert self.node_config.get("TraceBlockFetchClient", False), (
+                "TraceBlockFetchClient not enabled"
+            )
 
             # What are the other possible values? This should allow everything that is above Normal
             assert self.node_config.get("TracingVerbosity", "") in (
@@ -123,6 +127,7 @@ class AppConfig:
                 "MaximalVerbosity",
             ), "TracingVerbosity must be NormalVerbosity or MaximalVerbosity"
         else:
+
             def checkCfg(target, level, inheritPath, cfg):
                 details = cfg.get("details", None)
                 maxFrequency = cfg.get("maxFrequency", None)
@@ -131,23 +136,37 @@ class AppConfig:
                 error = False
 
                 if details not in ["DNormal", "DDetailed", "DMaximum"]:
-                    logger.error(f"For tracer '{target}' the {level} was found, but details of '{details}' is not DNormal, DDetailed, DMaximum")
+                    logger.error(
+                        f"For tracer '{target}' the {level} was found, but details of '{details}' is not DNormal, DDetailed, DMaximum"
+                    )
                     error = True
 
                 if maxFrequency not in [0, None]:
-                    logger.error(f"For tracer '{target}' the {level} was found, but maxFrequency of '{maxFrequency}' is not 0.0 or undeclared")
+                    logger.error(
+                        f"For tracer '{target}' the {level} was found, but maxFrequency of '{maxFrequency}' is not 0.0 or undeclared"
+                    )
                     error = True
 
                 if severity not in ["Info", "Debug"]:
-                    logger.error(f"For tracer '{target}' the {level} was found, but severity of '{severity}' is not Info or Debug")
+                    logger.error(
+                        f"For tracer '{target}' the {level} was found, but severity of '{severity}' is not Info or Debug"
+                    )
                     error = True
 
                 if level != "target":
-                    logger.warning(f"Ideal config for TraceOptions tracer '{target}' is to declare it rather than inherit from {level} of '{inheritPath}' with:")
-                    logger.warning(f'{{"{target}":{{"details":"DNormal","maxFrequency":0.0,"severity":"Info"}}')
+                    logger.warning(
+                        f"Ideal config for TraceOptions tracer '{target}' is to declare it rather than inherit from {level} of '{inheritPath}' with:"
+                    )
+                    logger.warning(
+                        f'{{"{target}":{{"details":"DNormal","maxFrequency":0.0,"severity":"Info"}}'
+                    )
                 elif error:
-                    logger.error(f"Ideal config for TraceOptions tracer '{target}' is to declare it explicitly with:")
-                    logger.error(f'{{"{target}":{{"details":"DNormal","maxFrequency":0.0,"severity":"Info"}}')
+                    logger.error(
+                        f"Ideal config for TraceOptions tracer '{target}' is to declare it explicitly with:"
+                    )
+                    logger.error(
+                        f'{{"{target}":{{"details":"DNormal","maxFrequency":0.0,"severity":"Info"}}'
+                    )
 
                 if error:
                     sys.exit()
@@ -157,12 +176,16 @@ class AppConfig:
                 "BlockFetch.Client.SendFetchRequest",
                 "ChainDB.AddBlockEvent.AddedToCurrentChain",
                 "ChainDB.AddBlockEvent.SwitchedToAFork",
-                "ChainSync.Client.DownloadedHeader"
+                "ChainSync.Client.DownloadedHeader",
             ]
 
-            if self.node_config.get("UseTraceDispatcher", {}) == False:
-                logger.error('The legacy tracing system appears to be in use as "UseTraceDispatcher" is declared false')
-                logger.error('Please adjust your node configuration or the BLOCKPERF_LEGACY_TRACING environment var and try again')
+            if self.node_config.get("UseTraceDispatcher", {}) == False:  # noqa: E712
+                logger.error(
+                    'The legacy tracing system appears to be in use as "UseTraceDispatcher" is declared false'
+                )
+                logger.error(
+                    "Please adjust your node configuration or the BLOCKPERF_LEGACY_TRACING environment var and try again"
+                )
                 sys.exit()
 
             cfg = self.node_config.get("TraceOptions", {})
@@ -180,13 +203,17 @@ class AppConfig:
             root = cfg.get("", {})
 
             if "Forwarder" not in root.get("backends", []):
-                logger.warning("A 'Forwarder' is not defined in the 'TraceOptions.\"\".backends' list")
-                logger.warning("In this case, an explicit 'Forwarder' backend will need to be declared or inherited to each required tracer:")
+                logger.warning(
+                    "A 'Forwarder' is not defined in the 'TraceOptions.\"\".backends' list"
+                )
+                logger.warning(
+                    "In this case, an explicit 'Forwarder' backend will need to be declared or inherited to each required tracer:"
+                )
                 logger.warning(" ".join(requiredTraceOptions))
 
             for tracer in requiredTraceOptions:
-                parent = ".".join(tracer.split('.')[0:2])
-                grandparent = tracer.split('.')[0]
+                parent = ".".join(tracer.split(".")[0:2])
+                grandparent = tracer.split(".")[0]
 
                 if tCfg := cfg.get(tracer, {}):
                     logger.info(f"Found tracer {tracer}")
@@ -205,7 +232,9 @@ class AppConfig:
                     checkCfg(tracer, "root", '""', root)
 
                 else:
-                    logger.error(f"Tracer '{tracer}' not found explictly or implicitly via inheritence, please declare it")
+                    logger.error(
+                        f"Tracer '{tracer}' not found explictly or implicitly via inheritence, please declare it"
+                    )
                     sys.exit()
 
     @property

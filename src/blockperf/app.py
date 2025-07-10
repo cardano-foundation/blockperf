@@ -4,7 +4,6 @@ import logging
 import os
 import queue
 import sys
-import threading
 import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -242,21 +241,32 @@ class App:
             if not (
                 (
                     self.app_config.legacy_tracing
-                    and LogEventKind.DOWNLOADED_HEADER in self.logevents[_block_hash].keys()
-                    and LogEventKind.SEND_FETCH_REQUEST in self.logevents[_block_hash].keys()
-                    and LogEventKind.COMPLETED_BLOCK_FETCH in self.logevents[_block_hash].keys()
+                    and LogEventKind.DOWNLOADED_HEADER
+                    in self.logevents[_block_hash].keys()
+                    and LogEventKind.SEND_FETCH_REQUEST
+                    in self.logevents[_block_hash].keys()
+                    and LogEventKind.COMPLETED_BLOCK_FETCH
+                    in self.logevents[_block_hash].keys()
                     and (
-                        LogEventKind.ADDED_TO_CURRENT_CHAIN in self.logevents[_block_hash].keys()
-                        or LogEventKind.SWITCHED_TO_A_FORK in self.logevents[_block_hash].keys()
+                        LogEventKind.ADDED_TO_CURRENT_CHAIN
+                        in self.logevents[_block_hash].keys()
+                        or LogEventKind.SWITCHED_TO_A_FORK
+                        in self.logevents[_block_hash].keys()
                     )
-                ) or (
+                )
+                or (
                     not self.app_config.legacy_tracing
-                    and LogEventNs.DOWNLOADED_HEADER in self.logevents[_block_hash].keys()
-                    and LogEventNs.SEND_FETCH_REQUEST in self.logevents[_block_hash].keys()
-                    and LogEventNs.COMPLETED_BLOCK_FETCH in self.logevents[_block_hash].keys()
+                    and LogEventNs.DOWNLOADED_HEADER
+                    in self.logevents[_block_hash].keys()
+                    and LogEventNs.SEND_FETCH_REQUEST
+                    in self.logevents[_block_hash].keys()
+                    and LogEventNs.COMPLETED_BLOCK_FETCH
+                    in self.logevents[_block_hash].keys()
                     and (
-                        LogEventNs.ADDED_TO_CURRENT_CHAIN in self.logevents[_block_hash].keys()
-                        or LogEventNs.SWITCHED_TO_A_FORK in self.logevents[_block_hash].keys()
+                        LogEventNs.ADDED_TO_CURRENT_CHAIN
+                        in self.logevents[_block_hash].keys()
+                        or LogEventNs.SWITCHED_TO_A_FORK
+                        in self.logevents[_block_hash].keys()
                     )
                 )
             ):
@@ -270,7 +280,11 @@ class App:
             for event_kind_list in self.logevents[_block_hash].values():
                 all_events.extend(event_kind_list)
 
-            new_sample = BlockSample(all_events, self.app_config.network_magic, self.app_config.legacy_tracing)
+            new_sample = BlockSample(
+                all_events,
+                self.app_config.network_magic,
+                self.app_config.legacy_tracing,
+            )
 
             # Check BlockSample has all needed Events to produce sample
             if not new_sample.is_complete():
@@ -318,7 +332,6 @@ class App:
                 len(self.published_blocks),
             )
 
-
     def get_real_node_logfile(self) -> Path:
         """Return the path to the logfile that node.log points to"""
         while True:
@@ -344,8 +357,10 @@ class App:
         trace_headers = [
             event
             for event in logevents
-            if self.app_config.legacy_tracing and event.kind == LogEventKind.DOWNLOADED_HEADER
-                or not self.app_config.legacy_tracing and event.ns == LogEventNs.DOWNLOADED_HEADER
+            if self.app_config.legacy_tracing
+            and event.kind == LogEventKind.DOWNLOADED_HEADER
+            or not self.app_config.legacy_tracing
+            and event.ns == LogEventNs.DOWNLOADED_HEADER
         ]
 
         # Without TraceHeaders we cant even calcualte the slot_time
@@ -386,7 +401,7 @@ class App:
                     fp.seek(0, 2)
                     seek_file = False
                 while True:
-                    new_lines = [l.strip('\n') for l in fp.readlines() if l != '\n']
+                    new_lines = [l.strip("\n") for l in fp.readlines() if l != "\n"]  # noqa: E741
                     # Create logevents from lines
                     logevents = map(
                         lambda line: LogEvent.from_logline(
@@ -395,7 +410,7 @@ class App:
                             self.start_time,
                             self.app_config.legacy_tracing,
                         ),
-                        new_lines
+                        new_lines,
                     )
                     # Filter out None's
                     logevents = [event for event in logevents if event is not None]
