@@ -14,6 +14,8 @@ from configparser import ConfigParser
 from pathlib import Path
 from typing import Union
 
+from blockperf import __version__ as blockperf_version
+
 logger = logging.getLogger(__name__)
 
 
@@ -52,6 +54,7 @@ class AppConfig:
             f"Client ID:       {self.clientid}\n"
             f"Networkmagic:    {self.network_magic}\n"
             f"Public IP:       {self.relay_public_ip}:{self.relay_public_port}\n"
+            f"Version:         v{blockperf_version}\n"
             # f"..... {blocksample.block_delay} sec\n\n"
             f"----------------------------------------------------\n\n"
         )

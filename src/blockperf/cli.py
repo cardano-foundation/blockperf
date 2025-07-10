@@ -7,6 +7,7 @@ from logging.config import dictConfig
 
 import psutil
 
+from blockperf import __version__ as blockperf_version
 from blockperf.app import App
 from blockperf.config import AppConfig
 
@@ -66,7 +67,7 @@ def setup_argparse():
     """Configures argparse"""
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        "command", help="Command to run blockperf with", choices=["run"]
+        "command", help="Command to run blockperf with", choices=["run", "version"]
     )
     parser.add_argument("--debug", help="Write more debug output", action="store_true")
     return parser.parse_args()
@@ -83,10 +84,11 @@ def main():
     if already_running():
         sys.exit("Blockperf is already running")
 
-    app_config = AppConfig()
-    app = App(app_config)
-
-    if args.command == "run":
+    if args.command == "version":
+        sys.stdout.write(f"v{blockperf_version}\n")
+    elif args.command == "run":
+        app_config = AppConfig()
+        app = App(app_config)
         app.run()
     else:
         sys.exit(f"I dont know what {args.command} means")
