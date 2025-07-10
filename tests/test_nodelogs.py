@@ -101,7 +101,7 @@ class TestFromLogline:
     def test_from_logline(self, trace_header_line):
         event = LogEvent.from_logline(trace_header_line)
         assert event
-        assert event.kind == LogEventKind.TRACE_DOWNLOADED_HEADER
+        assert event.kind == LogEventKind.DOWNLOADED_HEADER
         assert (
             event.block_hash
             == "dda846c34c0f219c26ded0994ef0beace1dea54487d60e0b4afe5f6f4fe3d246"

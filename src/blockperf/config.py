@@ -24,6 +24,8 @@ class ConfigError(Exception):
 BROKER_HOST = "a12j2zhynbsgdv-ats.iot.eu-central-1.amazonaws.com"
 BROKER_PORT = 8883
 BROKER_KEEPALIVE = 180
+LEGACY_TRACING = "True"
+PUBLISH = "True"
 ROOTDIR = Path(__file__).parent
 
 
@@ -42,12 +44,14 @@ class AppConfig:
         self.check_blockperf_config()
         msg = (
             f"\n----------------------------------------------------\n"
-            f"Node config:   {self.node_config_file}\n"
-            f"Node logfile:  {self.node_logfile}\n"
-            f"Client Name:   {self.name}\n"
-            f"Client ID:     {self.clientid}\n"
-            f"Networkmagic:  {self.network_magic}\n"
-            f"Public IP:     {self.relay_public_ip}:{self.relay_public_port}\n"
+            f"Publish:         {self.publish}\n"
+            f"Legacy Tracing:  {self.legacy_tracing}\n"
+            f"Node config:     {self.node_config_file}\n"
+            f"Node logfile:    {self.node_logfile}\n"
+            f"Client Name:     {self.name}\n"
+            f"Client ID:       {self.clientid}\n"
+            f"Networkmagic:    {self.network_magic}\n"
+            f"Public IP:       {self.relay_public_ip}:{self.relay_public_port}\n"
             # f"..... {blocksample.block_delay} sec\n\n"
             f"----------------------------------------------------\n\n"
         )
@@ -73,50 +77,147 @@ class AppConfig:
             logger.error("Node logdir '%s' does not exist", self.node_logdir)
             sys.exit()
 
-        if not self.name:
-            logger.error("NAME is not set")
-            sys.exit()
+        if self.publish is True:
+            if not self.name:
+                logger.error("NAME is not set")
+                sys.exit()
 
-        if not self.relay_public_ip:
-            logger.error("RELAY_PUBLIC_IP is not set")
-            sys.exit()
+            if not self.relay_public_ip:
+                logger.error("RELAY_PUBLIC_IP is not set")
+                sys.exit()
 
-        if not Path(self.client_cert).exists():
-            logger.error("Client cert '%s' does not exist", self.client_cert)
-            sys.exit()
+            if not Path(self.client_cert).exists():
+                logger.error("Client cert '%s' does not exist", self.client_cert)
+                sys.exit()
 
-        if not Path(self.client_key).exists():
-            logger.error("Client key '%s' does not exist", self.client_key)
-            sys.exit()
+            if not Path(self.client_key).exists():
+                logger.error("Client key '%s' does not exist", self.client_key)
+                sys.exit()
 
-        if not Path(self.amazon_ca).exists():
-            logger.error("Amazon CA '%s' does not exist", self.amazon_ca)
-            sys.exit()
+            if not Path(self.amazon_ca).exists():
+                logger.error("Amazon CA '%s' does not exist", self.amazon_ca)
+                sys.exit()
 
         if self.active_slot_coef <= 0.0:
             logger.error("Could not retrieve active_slot_coef")
             sys.exit()
 
         # Check for needed config values
-        assert self.node_config.get(
-            "TraceChainSyncClient", False
-        ), "TraceChainSyncClient not enabled"
-        assert self.node_config.get(
-            "TraceBlockFetchClient", False
-        ), "TraceBlockFetchClient not enabled"
-        # What are the other possible values? This should allow everything that is above Normal
-        assert self.node_config.get("TracingVerbosity", "") in (
-            "NormalVerbosity",
-            "MaximalVerbosity",
-        ), "TracingVerbosity must be NormalVerbosity or MaximalVerbosity"
+        if self.legacy_tracing:
+            if self.node_config.get("UseTraceDispatcher", {}) != False:
+                logger.error('The legacy tracing system does not appear to be in use as "UseTraceDispatcher" is not declared false')
+                logger.error('Please adjust your node configuration or the BLOCKPERF_LEGACY_TRACING environment var and try again')
+                sys.exit()
+
+            assert self.node_config.get(
+                "TraceChainSyncClient", False
+            ), "TraceChainSyncClient not enabled"
+
+            assert self.node_config.get(
+                "TraceBlockFetchClient", False
+            ), "TraceBlockFetchClient not enabled"
+
+            # What are the other possible values? This should allow everything that is above Normal
+            assert self.node_config.get("TracingVerbosity", "") in (
+                "NormalVerbosity",
+                "MaximalVerbosity",
+            ), "TracingVerbosity must be NormalVerbosity or MaximalVerbosity"
+        else:
+            def checkCfg(target, level, inheritPath, cfg):
+                details = cfg.get("details", None)
+                maxFrequency = cfg.get("maxFrequency", None)
+                severity = cfg.get("severity", None)
+
+                error = False
+
+                if details not in ["DNormal", "DDetailed", "DMaximum"]:
+                    logger.error(f"For tracer '{target}' the {level} was found, but details of '{details}' is not DNormal, DDetailed, DMaximum")
+                    error = True
+
+                if maxFrequency not in [0, None]:
+                    logger.error(f"For tracer '{target}' the {level} was found, but maxFrequency of '{maxFrequency}' is not 0.0 or undeclared")
+                    error = True
+
+                if severity not in ["Info", "Debug"]:
+                    logger.error(f"For tracer '{target}' the {level} was found, but severity of '{severity}' is not Info or Debug")
+                    error = True
+
+                if level != "target":
+                    logger.warning(f"Ideal config for TraceOptions tracer '{target}' is to declare it rather than inherit from {level} of '{inheritPath}' with:")
+                    logger.warning(f'{{"{target}":{{"details":"DNormal","maxFrequency":0.0,"severity":"Info"}}')
+                elif error:
+                    logger.error(f"Ideal config for TraceOptions tracer '{target}' is to declare it explicitly with:")
+                    logger.error(f'{{"{target}":{{"details":"DNormal","maxFrequency":0.0,"severity":"Info"}}')
+
+                if error:
+                    sys.exit()
+
+            requiredTraceOptions = [
+                "BlockFetch.Client.CompletedBlockFetch",
+                "BlockFetch.Client.SendFetchRequest",
+                "ChainDB.AddBlockEvent.AddedToCurrentChain",
+                "ChainDB.AddBlockEvent.SwitchedToAFork",
+                "ChainSync.Client.DownloadedHeader"
+            ]
+
+            if self.node_config.get("UseTraceDispatcher", {}) == False:
+                logger.error('The legacy tracing system appears to be in use as "UseTraceDispatcher" is declared false')
+                logger.error('Please adjust your node configuration or the BLOCKPERF_LEGACY_TRACING environment var and try again')
+                sys.exit()
+
+            cfg = self.node_config.get("TraceOptions", {})
+
+            # Given that default values for node tracer config may drift over
+            # time, let's depend on explicit node config to verify expected
+            # functionality.
+            if not cfg:
+                logger.error("TraceOptions are empty in the node config")
+                logger.error("A 'Forwarder' backend is required to log to file")
+                logger.error("TraceOptions tracer declarations also required are:")
+                logger.error(" ".join(requiredTraceOptions))
+                sys.exit()
+
+            root = cfg.get("", {})
+
+            if "Forwarder" not in root.get("backends", []):
+                logger.warning("A 'Forwarder' is not defined in the 'TraceOptions.\"\".backends' list")
+                logger.warning("In this case, an explicit 'Forwarder' backend will need to be declared or inherited to each required tracer:")
+                logger.warning(" ".join(requiredTraceOptions))
+
+            for tracer in requiredTraceOptions:
+                parent = ".".join(tracer.split('.')[0:2])
+                grandparent = tracer.split('.')[0]
+
+                if tCfg := cfg.get(tracer, {}):
+                    logger.info(f"Found tracer {tracer}")
+                    checkCfg(tracer, "target", tracer, tCfg)
+
+                elif pCfg := cfg.get(parent, {}):
+                    logger.info(f"Found tracer parent {parent}")
+                    checkCfg(tracer, "parent", parent, pCfg)
+
+                elif gCfg := cfg.get(grandparent, {}):
+                    logger.info(f"Found tracer grandparent {grandparent}")
+                    checkCfg(tracer, "grandparent", grandparent, gCfg)
+
+                elif root:
+                    logger.info(f"Found tracer root {root}:")
+                    checkCfg(tracer, "root", '""', root)
+
+                else:
+                    logger.error(f"Tracer '{tracer}' not found explictly or implicitly via inheritence, please declare it")
+                    sys.exit()
 
     @property
     def clientid(self) -> str:
-        certid = ""
-        with open(self.client_cert, mode="r") as f:
-            cert_string = "".join(f.readlines()[1:-1])
-            certid = hashlib.sha256(base64.b64decode(cert_string)).hexdigest()
-        return certid
+        if self.publish is True:
+            certid = ""
+            with open(self.client_cert, mode="r") as f:
+                cert_string = "".join(f.readlines()[1:-1])
+                certid = hashlib.sha256(base64.b64decode(cert_string)).hexdigest()
+            return certid
+        else:
+            return ""
 
     @property
     def broker_host(self) -> str:
@@ -141,6 +242,30 @@ class AppConfig:
             ),
         )
         return int(broker_port)
+
+    @property
+    def publish(self) -> bool:
+        publish = os.getenv(
+            "BLOCKPERF_PUBLISH",
+            self.config_parser.get(
+                "DEFAULT",
+                "publish",
+                fallback=PUBLISH,
+            ),
+        )
+        return publish == "True"
+
+    @property
+    def legacy_tracing(self) -> bool:
+        legacy_tracing = os.getenv(
+            "BLOCKPERF_LEGACY_TRACING",
+            self.config_parser.get(
+                "DEFAULT",
+                "legacy_tracing",
+                fallback=LEGACY_TRACING,
+            ),
+        )
+        return legacy_tracing == "True"
 
     @property
     def broker_keepalive(self) -> int:
@@ -178,12 +303,6 @@ class AppConfig:
     def node_logfile(self) -> Union[Path, None]:
         """Node logfile from env variable or read
         Idealy this would look into the config to determine the logfile from there
-
-        e.g.:
-        for ss in self.node_config.get("setupScribes", []):
-           if ss.get("scFormat") == "ScJson" and ss.get("scKind") == "FileSK":
-               node_logfile = Path(ss.get("scName"))
-               break
         """
         node_logfile = os.getenv("BLOCKPERF_NODE_LOGFILE", None)
         if not node_logfile:

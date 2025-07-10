@@ -3,8 +3,8 @@
 
 import json
 import logging
-import sys
-from datetime import datetime, timedelta, timezone
+import re
+from datetime import datetime
 from enum import Enum
 from typing import Union
 
@@ -12,85 +12,31 @@ logger = logging.getLogger(__name__)
 
 
 class LogEventKind(Enum):
-    """All events from the log file are of a specific kind."""
+    """All events from the log file are of a specific kind in the legacy tracing system."""
 
-    # TraceAddBlockEvent
-    SWITCHED_TO_A_FORK = "TraceAddBlockEvent.SwitchedToAFork"
     ADDED_TO_CURRENT_CHAIN = "TraceAddBlockEvent.AddedToCurrentChain"
-    ADD_BLOCK_VALIDATION = "TraceAddBlockEvent.AddBlockValidation.ValidCandidate"
-    TRY_SWITCH_TO_A_FORK = "TraceAddBlockEvent.TrySwitchToAFork"
-    IGNORE_BLOCK_ALREADY_IN_VOLATILE_DB = (
-        "TraceAddBlockEvent.IgnoreBlockAlreadyInVolatileDB"
-    )
-
-    # ChainSyncClientEvent
-    TRACE_DOWNLOADED_HEADER = "ChainSyncClientEvent.TraceDownloadedHeader"
-    TRACE_FOUND_INTERSECTION = "ChainSyncClientEvent.TraceFoundIntersection"
-    TRACE_ROLLED_BACK = "ChainSyncClientEvent.TraceRolledBack"
-
-    # Other
-    SEND_FETCH_REQUEST = "SendFetchRequest"
-    ADDED_FETCH_REQUEST = "AddedFetchRequest"
-    ACKNOWLEDGED_FETCH_REQUEST = "AcknowledgedFetchRequest"
-    STARTED_FETCH_BATCH = "StartedFetchBatch"
     COMPLETED_BLOCK_FETCH = "CompletedBlockFetch"
-    COMPLETED_FETCH_BATCH = "CompletedFetchBatch"
-    TRACE_MEMPOOL_ADDED_TX = "TraceMempoolAddedTx"
-    TRACE_MEMPOOL_REJECTED_TX = "TraceMempoolRejectedTx"
-    TRACE_MEMPOOL_REMOVE_TXS = "TraceMempoolRemoveTxs"
-    TRACE_LOCAL_ROOT_DNSMAP = "TraceLocalRootDNSMap"
-    PEER_SELECTION_COUNTERS = "PeerSelectionCounters"
-    PEER_STATUS_CHANGED = "PeerStatusChanged"
-    PEERS_FETCH = "PeersFetch"
-    MUX_ERRORED = "MuxErrored"
-    INBOUND_GOVERNOR_COUNTERS = "InboundGovernorCounters"
-    GOVERNOR_WAKEUP = "GovernorWakeup"
-    USE_LEDGER_AFTER = "UseLedgerAfter"
-    PUBLIC_ROOTS_REQUEST = "PublicRootsRequest"
-    PUBLIC_ROOTS_RESULTS = "PublicRootsResults"
-    PUBLIC_ROOT_DOMAINS = "PublicRootDomains"
-    PICKED_PEERS = "PickedPeers"
-    DEMOTE_ASYNCHRONOUS = "DemoteAsynchronous"
-    PROMOTE_COLD_PEERS = "PromoteColdPeers"
-    PROMOTE_WARM_PEERS = "PromoteWarmPeers"
-    PROMOTE_COLD_DONE = "PromoteColdDone"
-    PROMOTE_COLD_FAILED = "PromoteColdFailed"
-    PROMOTED_TO_WARM_REMOTE = "PromotedToWarmRemote"
-    PROMOTED_TO_HOT_REMOTE = "PromotedToHotRemote"
-    DEMOTED_TO_COLD_REMOTE = "DemotedToColdRemote"
-    DEMOTED_TO_WARM_REMOTE = "DemotedToWarmRemote"
-    SUBSCRIPTION_TRACE = "SubscriptionTrace"
-    ACCEPT_POLICY_TRACE = "AcceptPolicyTrace"
-    ERROR_POLICY_TRACE = "ErrorPolicyTrace"
-    LOCAL_ROOT_WAITING = "LocalRootWaiting"
-    LOCAL_ROOT_RESULT = "LocalRootResult"
-    LOCAL_ROOT_GROUPS = "LocalRootGroups"
-    RESPONDER_ERRORED = "ResponderErrored"
-    PROMOTE_WARM_DONE = "PromoteWarmDone"
-    CONNECTION_MANAGER_COUNTERS = "ConnectionManagerCounters"
-    CONNECTION_HANDLER = "ConnectionHandler"
-    CONNECT_ERROR = "ConnectError"
-    LOG_VALUE = "LogValue"
-    CHURN_MODE = "ChurnMode"
-    TARGETS_CHANGED = "TargetsChanged"
-    DEMOTE_HOT_PEERS = "DemoteHotPeers"
-    CLIENT_TERMINATING = "ClientTerminating"
-    PEER_STATUS_CHANGE_FAILURE = "PeerStatusChangeFailure"
-    DEMOTE_HOT_FAILED = "DemoteHotFailed"
-    PEER_MONITORING_ERROR = "PeerMonitoringError"
-    FORGE_COLD_PEERS = "ForgeColdPeers"
-    DEMOTE_WARM_PEERS = "DemoteWarmPeers"
-    DEMOTE_WARM_DONE = "DemoteWarmDone"
-    TOOK_SNAPSHOT = "TraceSnapshotEvent.TookSnapshot"
-    PROMOTED_COLD_LOCAL_PEERS = "PromoteColdLocalPeers"
+    DOWNLOADED_HEADER = "ChainSyncClientEvent.TraceDownloadedHeader"
+    SEND_FETCH_REQUEST = "SendFetchRequest"
+    SWITCHED_TO_A_FORK = "TraceAddBlockEvent.SwitchedToAFork"
+    UNKNOWN = "Unknown"
 
+
+class LogEventNs(Enum):
+    """All events from the log file are of a specific namespace in the new tracing system."""
+
+    ADDED_TO_CURRENT_CHAIN = "ChainDB.AddBlockEvent.AddedToCurrentChain"
+    COMPLETED_BLOCK_FETCH = "BlockFetch.Client.CompletedBlockFetch"
+    DOWNLOADED_HEADER = "ChainSync.Client.DownloadedHeader"
+    SEND_FETCH_REQUEST = "BlockFetch.Client.SendFetchRequest"
+    SWITCHED_TO_A_FORK = "ChainDB.AddBlockEvent.SwitchedToAFork"
     UNKNOWN = "Unknown"
 
 
 class LogEvent:
     """A LogEvent represents a single line in the nodes log file.
 
-    TraceDownloadedHeader
+    DownloadedHeader or TraceDownloadedHeader (legacy tracing)
     A (new) Header was announced (downloaded) to the node. Emitted each time a
     header is received from any given peer. We are mostly interested in the
     time the first header of any given Block was received (announced).
@@ -126,19 +72,32 @@ class LogEvent:
     remote_addr: str
     remote_port: str
 
-    def __init__(self, event_data: dict) -> None:
+    def __init__(self, event_data: dict, legacy_tracing: bool = True) -> None:
         """Create a LogEvent with `from_logline` method by passing in the json string
         as written to the nodes log."""
 
-        if _at := event_data.get("at", None):
-            self.at = datetime.strptime(_at, "%Y-%m-%dT%H:%M:%S.%f%z")
+        self.event_data = event_data
+        self.legacy_tracing = legacy_tracing
 
+        # Parse datetime string from either micro or nanoseconds with TZ offset
+        if _at := event_data.get("at", None):
+            if legacy_tracing:
+                self.at = datetime.strptime(_at, "%Y-%m-%dT%H:%M:%S.%f%z")
+            else:
+                # Nanoseconds logging is variable length
+                dt, suffix = _at.split(".")
+                if match := re.match(r'^(\d+)(\D.*)', suffix):
+                    ns, tz = match.groups()
+                    usec = ns[:6]
+                    self.at = datetime.strptime(f"{dt}.{usec}{tz}", "%Y-%m-%dT%H:%M:%S.%f%z")
+
+        # Truncate from micro to milliseconds
         if hasattr(self, "at"):
             self.atstr = self.at.strftime("%Y-%m-%d %H:%M:%S,%f")[:-3]
 
         self.data = event_data.get("data", {})
         if not self.data:
-            logger.error("%s has not data", self)
+            logger.error("%s has no data", self)
 
         self.size = self.data.get("size", 0)
         self.delay = self.data.get("delay", 0.0)
@@ -150,8 +109,8 @@ class LogEvent:
         if self.newtip:
             self.newtip = self.newtip.split("@")[0]
 
-        if self.kind in (
-            LogEventKind.TRACE_DOWNLOADED_HEADER,
+        if legacy_tracing and self.kind in (
+            LogEventKind.DOWNLOADED_HEADER,
             LogEventKind.SEND_FETCH_REQUEST,
             LogEventKind.COMPLETED_BLOCK_FETCH,
         ):
@@ -163,20 +122,44 @@ class LogEvent:
             self.remote_port = (
                 self.data.get("peer", {}).get("remote", {}).get("port", "")
             )
+        elif not legacy_tracing and self.ns in (
+            LogEventNs.DOWNLOADED_HEADER,
+            LogEventNs.SEND_FETCH_REQUEST,
+            LogEventNs.COMPLETED_BLOCK_FETCH,
+        ):
+            connId = self.data.get("peer", {}).get("connectionId", "")
+            local, remote = connId.split(maxsplit=1)
+            local_addr, local_port = local.split(":", 1)
+            remote_addr, remote_port = remote.split(":", 1)
+            self.local_addr = local_addr
+            self.local_port = local_port
+            self.remote_addr = remote_addr
+            self.remote_port = remote_port
 
     def __repr__(self):
-        _kind = self.kind.value
-        if "." in _kind:
-            _kind = f"{_kind.split('.')[1]}"
-        _repr = f"LogEvent {_kind}"
+        if self.legacy_tracing:
+            _kind = self.kind.value
+            if "." in _kind:
+                _kind = f"{_kind.split('.')[1]}"
+            _repr = f"LogEvent {_kind}"
 
-        if self.kind == LogEventKind.UNKNOWN:
-            _repr += f" {self.data.get('kind')}"
+            if self.kind == LogEventKind.UNKNOWN:
+                _repr += f" {self.data.get('kind')}"
+        else:
+            _ns = self.ns.value
+            if "." in _ns:
+                _ns = f"{_ns.split('.')[-1]}"
+            _repr = f"LogEvent {_ns}"
+
+            if self.ns == LogEventNs.UNKNOWN:
+                _repr += f" {self.data.get('ns')}"
 
         if self.block_hash:
             _repr += f" Hash: {self.block_hash[0:10]}"
+
         if self.block_num:
             _repr += f" BlockNo: {self.block_num}"
+
         return _repr
 
     @classmethod
@@ -185,11 +168,12 @@ class LogEvent:
         logline: str,
         masked_addresses: list = [],
         bad_before: Union[int, None] = None,
+        legacy_tracing: bool = True,
     ) -> Union["LogEvent", None]:
         """Takes a single line from the logs and creates a LogEvent.
         Will return None if the LogEvent could not be created due to various reason.
-        Either because the json is invalid, the LogKind is not of interest,
-        the event is tool old or it does not have a block_hash.
+        Either because the json is invalid, the log namespace or kind is not of
+        interest, the event is tool old or it does not have a block_hash.
         """
         # Most stupid (simple) way to remove ip addresss given
         if masked_addresses:
@@ -199,17 +183,26 @@ class LogEvent:
         _event = None
         try:
             json_data = json.loads(logline)
-            _event = cls(json_data)
+            _event = cls(json_data, legacy_tracing)
         except json.decoder.JSONDecodeError:
             logger.error("Invalid JSON %s", logline)
             return None
 
-        if _event.kind not in (
-            LogEventKind.TRACE_DOWNLOADED_HEADER,
-            LogEventKind.SEND_FETCH_REQUEST,
-            LogEventKind.COMPLETED_BLOCK_FETCH,
-            LogEventKind.ADDED_TO_CURRENT_CHAIN,
-            LogEventKind.SWITCHED_TO_A_FORK,
+        if (
+            legacy_tracing and _event.kind not in (
+                LogEventKind.DOWNLOADED_HEADER,
+                LogEventKind.SEND_FETCH_REQUEST,
+                LogEventKind.COMPLETED_BLOCK_FETCH,
+                LogEventKind.ADDED_TO_CURRENT_CHAIN,
+                LogEventKind.SWITCHED_TO_A_FORK
+            )
+            or not legacy_tracing and _event.ns not in (
+                LogEventNs.DOWNLOADED_HEADER,
+                LogEventNs.SEND_FETCH_REQUEST,
+                LogEventNs.COMPLETED_BLOCK_FETCH,
+                LogEventNs.ADDED_TO_CURRENT_CHAIN,
+                LogEventNs.SWITCHED_TO_A_FORK
+            )
         ):
             return None
 
@@ -224,16 +217,16 @@ class LogEvent:
     @property
     def block_hash(self) -> str:
         block_hash = ""
-        if self.kind == LogEventKind.SEND_FETCH_REQUEST:
+        if self.ns == LogEventNs.SEND_FETCH_REQUEST or self.kind == LogEventKind.SEND_FETCH_REQUEST:
             block_hash = self.data.get("head", "")
-        elif self.kind in (
-            LogEventKind.COMPLETED_BLOCK_FETCH,
-            LogEventKind.TRACE_DOWNLOADED_HEADER,
+        elif (
+            self.ns in (LogEventNs.COMPLETED_BLOCK_FETCH, LogEventNs.DOWNLOADED_HEADER)
+            or self.kind in (LogEventKind.COMPLETED_BLOCK_FETCH, LogEventKind.DOWNLOADED_HEADER)
         ):
             block_hash = self.data.get("block", "")
-        elif self.kind in (
-            LogEventKind.ADDED_TO_CURRENT_CHAIN,
-            LogEventKind.SWITCHED_TO_A_FORK,
+        elif (
+            self.ns in (LogEventNs.ADDED_TO_CURRENT_CHAIN, LogEventNs.SWITCHED_TO_A_FORK)
+            or self.kind in (LogEventKind.ADDED_TO_CURRENT_CHAIN, LogEventKind.SWITCHED_TO_A_FORK)
         ):
             newtip = self.data.get("newtip", "")
             block_hash = newtip.split("@")[0]
@@ -254,6 +247,18 @@ class LogEvent:
             else:
                 self._kind = LogEventKind(LogEventKind.UNKNOWN)
         return self._kind
+
+    @property
+    def ns(self) -> LogEventNs:
+        if not hasattr(self, "_ns"):
+            _value = self.event_data.get("ns")
+            for ns in LogEventNs:
+                if _value == ns.value:
+                    self._ns = LogEventNs(_value)
+                    break
+            else:
+                self._ns = LogEventNs(LogEventNs.UNKNOWN)
+        return self._ns
 
     @property
     def block_num(self) -> int:

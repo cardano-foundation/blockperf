@@ -34,17 +34,22 @@ class MQTTClient(mqtt.Client):
         client_keyfile: str,
         host: str,
         port: int,
+        publish: bool,
         keepalive: int,
     ) -> None:
         super().__init__(protocol=mqtt.MQTTv5)
-        self.tls_set(
-            ca_certs=ca_certfile,
-            certfile=client_certfile,
-            keyfile=client_keyfile,
-        )
-        logger.info("Connecting to %s:%s", host, port)
-        self.connect(host=host, port=port, keepalive=keepalive)
-        self.loop_start()
+        if publish is True:
+            self.tls_set(
+                ca_certs=ca_certfile,
+                certfile=client_certfile,
+                keyfile=client_keyfile,
+            )
+            logger.info("Connecting to %s:%s", host, port)
+            self.connect(host=host, port=port, keepalive=keepalive)
+            self.loop_start()
+        else:
+            logger.info("Skipping publishing")
+
 
     def on_connect(self, client, userdata, flags, reasonCode, properties):
         logger.info("Connected: %s ", str(reasonCode))

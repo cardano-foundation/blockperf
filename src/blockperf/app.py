@@ -15,7 +15,7 @@ from blockperf.blocksample import BlockSample, slot_time_of
 from blockperf.config import AppConfig
 from blockperf.metrics import Metrics
 from blockperf.mqtt import MQTTClient
-from blockperf.nodelogs import LogEvent, LogEventKind
+from blockperf.nodelogs import LogEvent, LogEventKind, LogEventNs
 
 logger = logging.getLogger(__name__)
 
@@ -52,6 +52,7 @@ class App:
                 client_keyfile=self.app_config.client_key,
                 host=self.app_config.broker_host,
                 port=self.app_config.broker_port,
+                publish=self.app_config.publish,
                 keepalive=self.app_config.broker_keepalive,
             )
 
@@ -184,7 +185,7 @@ class App:
         some are of interest.
 
             * Must be of a specific kind
-                TRACE_DOWNLOADED_HEADER, SEND_FETCH_REQUEST, COMPLETED_BLOCK_FETCH,
+                DOWNLOADED_HEADER, SEND_FETCH_REQUEST, COMPLETED_BLOCK_FETCH,
                 ADDED_TO_CURRENT_CHAIN, SWITCHED_TO_A_FORK
             * Must not be too old (invalid)
             * Must have a blockhash
@@ -192,16 +193,16 @@ class App:
 
         A sample can only be created if all the required LogEvents have been
         recorded for that given block. All required LogEvents means that
-        for each hash there must at least be one TRACE_DOWNLOADED_HEADER, one SEND_FETCH_REQUEST
+        for each hash there must at least be one DOWNLOADED_HEADER, one SEND_FETCH_REQUEST
         and one COMPLETED_BLOCK_FETCH as well es one of the two possible adoption
         kinds which are ADDED_TO_CURRENT_CHAIN and SWITCHED_TO_A_FORK.
 
-        To make that test somewhat simple there self.logevents holds all events
+        To make that test somewhat simple the self.logevents holds all events
         in dictionaries for their respective types. That makes it rather simple
         to test if all required LogEvents have been collected yet.
 
         Once that is the case a new sample is created by collecting all events
-        and instanciating BlockSample(). If the sample is complete it published.
+        and instantiating BlockSample(). If the sample is complete it published.
 
         """
 
@@ -220,11 +221,16 @@ class App:
             if _block_hash not in self.working_hashes:
                 self.working_hashes.append(_block_hash)
 
-            # All events recoreded are stored in different lists based
-            # on the event kind within logevents
-            if event.kind not in self.logevents[_block_hash]:
-                self.logevents[_block_hash][event.kind] = []
-            self.logevents[_block_hash][event.kind].append(event)
+            # All events recorded are stored in different lists based
+            # on the event namespace or kind within logevents
+            if self.app_config.legacy_tracing:
+                if event.kind not in self.logevents[_block_hash]:
+                    self.logevents[_block_hash][event.kind] = []
+                self.logevents[_block_hash][event.kind].append(event)
+            else:
+                if event.ns not in self.logevents[_block_hash]:
+                    self.logevents[_block_hash][event.ns] = []
+                self.logevents[_block_hash][event.ns].append(event)
             logger.debug(event)
 
             # Do not event try to republish
@@ -234,17 +240,24 @@ class App:
 
             # Check that all needed events are recorded for current _block_hash
             if not (
-                LogEventKind.TRACE_DOWNLOADED_HEADER
-                in self.logevents[_block_hash].keys()
-                and LogEventKind.SEND_FETCH_REQUEST
-                in self.logevents[_block_hash].keys()
-                and LogEventKind.COMPLETED_BLOCK_FETCH
-                in self.logevents[_block_hash].keys()
-                and (
-                    LogEventKind.ADDED_TO_CURRENT_CHAIN
-                    in self.logevents[_block_hash].keys()
-                    or LogEventKind.SWITCHED_TO_A_FORK
-                    in self.logevents[_block_hash].keys()
+                (
+                    self.app_config.legacy_tracing
+                    and LogEventKind.DOWNLOADED_HEADER in self.logevents[_block_hash].keys()
+                    and LogEventKind.SEND_FETCH_REQUEST in self.logevents[_block_hash].keys()
+                    and LogEventKind.COMPLETED_BLOCK_FETCH in self.logevents[_block_hash].keys()
+                    and (
+                        LogEventKind.ADDED_TO_CURRENT_CHAIN in self.logevents[_block_hash].keys()
+                        or LogEventKind.SWITCHED_TO_A_FORK in self.logevents[_block_hash].keys()
+                    )
+                ) or (
+                    not self.app_config.legacy_tracing
+                    and LogEventNs.DOWNLOADED_HEADER in self.logevents[_block_hash].keys()
+                    and LogEventNs.SEND_FETCH_REQUEST in self.logevents[_block_hash].keys()
+                    and LogEventNs.COMPLETED_BLOCK_FETCH in self.logevents[_block_hash].keys()
+                    and (
+                        LogEventNs.ADDED_TO_CURRENT_CHAIN in self.logevents[_block_hash].keys()
+                        or LogEventNs.SWITCHED_TO_A_FORK in self.logevents[_block_hash].keys()
+                    )
                 )
             ):
                 logger.debug(
@@ -257,7 +270,7 @@ class App:
             for event_kind_list in self.logevents[_block_hash].values():
                 all_events.extend(event_kind_list)
 
-            new_sample = BlockSample(all_events, self.app_config.network_magic)
+            new_sample = BlockSample(all_events, self.app_config.network_magic, self.app_config.legacy_tracing)
 
             # Check BlockSample has all needed Events to produce sample
             if not new_sample.is_complete():
@@ -286,22 +299,25 @@ class App:
             self.metrics.inc("valid_samples")
 
             # The sample is ready to be published, create the payload for mqtt,
-            # determine the topic and publish that sample
+            # determine the topic and publish that sample if publishing is enabled
             self.print_block_stats(new_sample)
             payload = self.mqtt_payload_from(new_sample)
             logger.debug(
                 json.dumps(payload, indent=4, sort_keys=True, ensure_ascii=False)
             )
-            topic = f"{self.app_config.topic}/{new_sample.block_hash}"
-            self.mqtt_client.publish(topic, payload)
+
+            if self.app_config.publish is True:
+                topic = f"{self.app_config.topic}/{new_sample.block_hash}"
+                self.mqtt_client.publish(topic, payload)
 
             self.published_blocks.append(_block_hash)
             logger.info(
-                "LogEvents for %s blocks - Working on %s blocks, Published %s samples ",
+                f"LogEvents for %s blocks - Working on %s blocks, {'Published' if self.app_config.publish is True else 'skipped Publishing'} %s samples ",
                 len(self.logevents.keys()),
                 len(self.working_hashes),
                 len(self.published_blocks),
             )
+
 
     def get_real_node_logfile(self) -> Path:
         """Return the path to the logfile that node.log points to"""
@@ -322,13 +338,14 @@ class App:
                 time.sleep(2)
 
     def slot_is_too_old(self, logevents: list) -> bool:
-        """Given a list of logevents it finds the TraceDownloadedHeader event
+        """Given a list of logevents it finds the DownloadedHeader event
         and determines whether the current slot_num is too old for us.
         """
         trace_headers = [
             event
             for event in logevents
-            if event.kind == LogEventKind.TRACE_DOWNLOADED_HEADER
+            if self.app_config.legacy_tracing and event.kind == LogEventKind.DOWNLOADED_HEADER
+                or not self.app_config.legacy_tracing and event.ns == LogEventNs.DOWNLOADED_HEADER
         ]
 
         # Without TraceHeaders we cant even calcualte the slot_time
@@ -361,7 +378,6 @@ class App:
         seek_file = True
         while True:
             real_node_log = self.get_real_node_logfile()
-            lines_read = 0
             with open(real_node_log, "r", 1, "utf-8") as fp:
                 logger.info("Opened %s", real_node_log)
                 # Avoid reading through old node.log on fresh start
@@ -370,13 +386,16 @@ class App:
                     fp.seek(0, 2)
                     seek_file = False
                 while True:
-                    new_lines = fp.readlines()
+                    new_lines = [l.strip('\n') for l in fp.readlines() if l != '\n']
                     # Create logevents from lines
                     logevents = map(
                         lambda line: LogEvent.from_logline(
-                            line, self.app_config.masked_addresses, self.start_time
+                            line,
+                            self.app_config.masked_addresses,
+                            self.start_time,
+                            self.app_config.legacy_tracing,
                         ),
-                        new_lines,
+                        new_lines
                     )
                     # Filter out None's
                     logevents = [event for event in logevents if event is not None]
