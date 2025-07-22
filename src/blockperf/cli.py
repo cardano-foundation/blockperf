@@ -80,13 +80,13 @@ def main():
     """
     args = setup_argparse()
     setup_logger(args.debug)
-    # Ensure there is only one instance of blockperf running
-    if already_running():
-        sys.exit("Blockperf is already running")
 
     if args.command == "version":
         sys.stdout.write(f"v{blockperf_version}\n")
     elif args.command == "run":
+        # Ensure there is only one instance of blockperf running
+        if already_running():
+            sys.exit("Blockperf is already running")
         app_config = AppConfig()
         app = App(app_config)
         app.run()
